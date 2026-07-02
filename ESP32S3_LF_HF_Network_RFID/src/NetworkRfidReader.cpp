@@ -49,6 +49,7 @@ constexpr uint32_t kElechouseHeartbeatMs = 20000UL;
 constexpr bool kHfP2pEnabled = false;
 constexpr uint32_t kHfCardIsoDepTimeoutMs = 2000UL;
 constexpr uint16_t kHfCardRawTxTimeoutMs = 25;
+constexpr uint16_t kHfCardFdtListenUs = 100;
 constexpr size_t kMaxHfCardPayloadLen = 512;
 constexpr size_t kMaxHfCardWifiSsidLen = 32;
 constexpr size_t kMaxHfCardWifiPasswordLen = 64;
@@ -1483,6 +1484,7 @@ bool NetworkRfidReader::sendHfCardIsoDepFrame(const uint8_t* frame, size_t lengt
     err = hfReader_->st25r3916WriteFifo(frame, static_cast<uint16_t>(length));
   }
   if (err == ERR_NONE) {
+    delayMicroseconds(kHfCardFdtListenUs);
     err = hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_TRANSMIT_WITH_CRC);
   }
   if (err != ERR_NONE) {
@@ -1549,11 +1551,21 @@ ReturnCode NetworkRfidReader::pollHfCardRawFrame(size_t& rxBytes) {
   const uint16_t fifoBytes = hfReader_->st25r3916GetNumFIFOBytes();
   const uint8_t lastBits = hfReader_->st25r3916GetNumFIFOLastBits();
   if (lastBits != 0U) {
+    uint8_t partial[4] = {};
+    const uint16_t partialBytes = static_cast<uint16_t>((fifoBytes < sizeof(partial)) ? fifoBytes : sizeof(partial));
+    if (partialBytes > 0U) {
+      hfReader_->st25r3916ReadFifo(partial, partialBytes);
+    }
     if (console_ != nullptr) {
       console_->print(F("HF card raw RX incomplete fifo="));
       console_->print(fifoBytes);
       console_->print(F(" lastBits="));
-      console_->println(lastBits);
+      console_->print(lastBits);
+      if (partialBytes > 0U) {
+        console_->print(F(" data="));
+        console_->print(hexBytes(partial, partialBytes, true));
+      }
+      console_->println();
     }
     hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_CLEAR_FIFO);
     return ERR_INCOMPLETE_BYTE;
