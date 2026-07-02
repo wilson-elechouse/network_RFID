@@ -1300,19 +1300,30 @@ void NetworkRfidReader::serviceHfCardEmulation() {
   bool data_flag = false;
   rfalBitRate last_br = RFAL_BR_106;
   const rfalLmState state = hfReader_->rfalListenGetState(&data_flag, &last_br);
-  if (state != hfLastLmState_) {
+  const bool stateChanged = (state != hfLastLmState_);
+
+  if (data_flag && hfListenRxBits_ > 0) {
+    const size_t rx_bytes = (hfListenRxBits_ + 7U) / 8U;
+    const bool handled = handleHfCardListenFrame(hfListenRxBuf_, rx_bytes);
+    if (stateChanged) {
+      hfLastLmState_ = state;
+      if (console_ != nullptr) {
+        console_->print(F("HF card state="));
+        console_->println(hfLmStateName(state));
+      }
+    }
+    if (!handled) {
+      emitCard("HF", "CARD-RX", hexBytes(hfListenRxBuf_, rx_bytes, true));
+      hfReader_->rfalListenSetState(state);
+    }
+    return;
+  }
+
+  if (stateChanged) {
     hfLastLmState_ = state;
     if (console_ != nullptr) {
       console_->print(F("HF card state="));
       console_->println(hfLmStateName(state));
-    }
-  }
-
-  if (data_flag && hfListenRxBits_ > 0) {
-    const size_t rx_bytes = (hfListenRxBits_ + 7U) / 8U;
-    if (!handleHfCardListenFrame(hfListenRxBuf_, rx_bytes)) {
-      emitCard("HF", "CARD-RX", hexBytes(hfListenRxBuf_, rx_bytes, true));
-      hfReader_->rfalListenSetState(state);
     }
   }
 }
@@ -1347,11 +1358,12 @@ bool NetworkRfidReader::handleHfCardListenFrame(const uint8_t* data, size_t leng
   hfCardSelectedFile_ = kT4tFileNone;
   hfReader_->rfalListenSetState(RFAL_LM_STATE_CARDEMU_4A);
 
-  if (console_ != nullptr) {
+  const bool sent = sendHfCardIsoDepFrame(ats, sizeof(ats), true);
+  if (sent && console_ != nullptr) {
     console_->print(F("HF card RATS -> ATS field="));
     console_->println(hfReader_->rfalIsExtFieldOn() ? F("on") : F("off"));
   }
-  return sendHfCardIsoDepFrame(ats, sizeof(ats), true);
+  return sent;
 }
 
 void NetworkRfidReader::serviceHfCardIsoDep() {
