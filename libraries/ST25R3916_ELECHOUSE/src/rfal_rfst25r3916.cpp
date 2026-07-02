@@ -1553,6 +1553,9 @@ void RfalRfST25R3916Class::rfalTransceiveRx(void)
 
       /* Only raise Link Loss if EOF is detected with no Rx Start */
       if (((irqs & ST25R3916_IRQ_MASK_EOF) != 0U) && ((irqs & ST25R3916_IRQ_MASK_RXS) == 0U)) {
+        if (gRFAL.Lm.state == RFAL_LM_STATE_CARDEMU_4A) {
+          break;
+        }
         /* In AP2P a Field On has already occurred - treat this as timeout | mute */
         gRFAL.TxRx.status = (rfalIsModeActiveComm(gRFAL.mode) ? ERR_TIMEOUT : ERR_LINK_LOSS);
         gRFAL.TxRx.state  = RFAL_TXRX_STATE_RX_FAIL;
@@ -1687,7 +1690,9 @@ void RfalRfST25R3916Class::rfalTransceiveRx(void)
         /* Check if there's a specific error handling for this */
         rfalErrorHandling();
         break;
-      } else if (rfalIsModePassiveListen(gRFAL.mode) && ((irqs & ST25R3916_IRQ_MASK_EOF) != 0U)) {
+      } else if (rfalIsModePassiveListen(gRFAL.mode) &&
+                 ((irqs & ST25R3916_IRQ_MASK_EOF) != 0U) &&
+                 (gRFAL.Lm.state != RFAL_LM_STATE_CARDEMU_4A)) {
         gRFAL.TxRx.status = ERR_LINK_LOSS;
         gRFAL.TxRx.state  = RFAL_TXRX_STATE_RX_FAIL;
         break;

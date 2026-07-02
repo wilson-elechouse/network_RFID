@@ -371,6 +371,7 @@ private:
   uint16_t hfListenRxBits_ = 0;
   rfalLmState hfLastLmState_ = RFAL_LM_STATE_NOT_INIT;
   bool hfCardIsoDepActive_ = false;
+  uint32_t hfCardIsoDepStartMs_ = 0;
   uint8_t hfCardExpectedBlock_ = 0;
   uint8_t hfCardSelectedFile_ = 0;
   uint8_t hfCardTxBuf_[RFAL_NFC_RF_BUF_LEN] = {};

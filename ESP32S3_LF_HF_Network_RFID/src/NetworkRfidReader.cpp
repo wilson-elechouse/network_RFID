@@ -47,6 +47,7 @@ constexpr const char* kElechouseBrokerHost = "www.elechouse.com";
 constexpr uint16_t kElechouseBrokerPort = 9000;
 constexpr uint32_t kElechouseHeartbeatMs = 20000UL;
 constexpr bool kHfP2pEnabled = false;
+constexpr uint32_t kHfCardIsoDepTimeoutMs = 2000UL;
 constexpr size_t kMaxHfCardPayloadLen = 512;
 constexpr size_t kMaxHfCardWifiSsidLen = 32;
 constexpr size_t kMaxHfCardWifiPasswordLen = 64;
@@ -1302,6 +1303,7 @@ void NetworkRfidReader::resetHfCardProtocol() {
   hfLastLmState_ = RFAL_LM_STATE_NOT_INIT;
   hfListenRxBits_ = 0;
   hfCardIsoDepActive_ = false;
+  hfCardIsoDepStartMs_ = 0;
   hfCardExpectedBlock_ = 0;
   hfCardSelectedFile_ = kT4tFileNone;
   hfCardTxLen_ = 0;
@@ -1322,6 +1324,7 @@ bool NetworkRfidReader::handleHfCardListenFrame(const uint8_t* data, size_t leng
   };
 
   hfCardIsoDepActive_ = true;
+  hfCardIsoDepStartMs_ = millis();
   hfCardExpectedBlock_ = 0;
   hfCardSelectedFile_ = kT4tFileNone;
   hfReader_->rfalListenSetState(RFAL_LM_STATE_CARDEMU_4A);
@@ -1337,6 +1340,15 @@ void NetworkRfidReader::serviceHfCardIsoDep() {
   hfReader_->rfalWorker();
   const ReturnCode ret = hfReader_->rfalGetTransceiveStatus();
   if (ret == ERR_BUSY) {
+    if (hfCardIsoDepStartMs_ != 0U && (millis() - hfCardIsoDepStartMs_) > kHfCardIsoDepTimeoutMs) {
+      if (console_ != nullptr) {
+        console_->println(F("HF card ISO-DEP timeout"));
+      }
+      hfCardEmulationActive_ = false;
+      resetHfCardProtocol();
+      lastHfCardEmuAttemptMs_ = 0;
+      startHfCardEmulation();
+    }
     return;
   }
 
@@ -1353,6 +1365,7 @@ void NetworkRfidReader::serviceHfCardIsoDep() {
   }
 
   const size_t rx_bytes = (hfListenRxBits_ + 7U) / 8U;
+  hfCardIsoDepStartMs_ = millis();
   if (!handleHfCardIsoDepFrame(hfListenRxBuf_, rx_bytes)) {
     hfCardEmulationActive_ = false;
     resetHfCardProtocol();
@@ -1453,6 +1466,7 @@ bool NetworkRfidReader::sendHfCardIsoDepFrame(const uint8_t* frame, size_t lengt
     return false;
   }
 
+  hfCardIsoDepStartMs_ = expectRx ? millis() : 0U;
   return true;
 }
 
