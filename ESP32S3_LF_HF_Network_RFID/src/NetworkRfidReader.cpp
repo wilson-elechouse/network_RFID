@@ -1367,6 +1367,15 @@ void NetworkRfidReader::serviceHfCardIsoDep() {
   }
 
   if (ret != ERR_NONE) {
+    if (ret == ERR_INCOMPLETE_BYTE || ret == ERR_CRC || ret == ERR_PAR || ret == ERR_FRAMING) {
+      if (console_ != nullptr) {
+        console_->print(F("HF card ISO-DEP raw RX discarded: "));
+        console_->println(static_cast<int>(ret));
+      }
+      hfReader_->st25r3916EnableInterrupts(kHfCardRawIrqs);
+      hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_UNMASK_RECEIVE_DATA);
+      return;
+    }
     if (console_ != nullptr && ret != ERR_TIMEOUT) {
       console_->print(F("HF card ISO-DEP raw RX stopped: "));
       console_->println(static_cast<int>(ret));
@@ -1537,13 +1546,19 @@ ReturnCode NetworkRfidReader::pollHfCardRawFrame(size_t& rxBytes) {
     return ERR_BUSY;
   }
 
+  const uint16_t fifoBytes = hfReader_->st25r3916GetNumFIFOBytes();
   const uint8_t lastBits = hfReader_->st25r3916GetNumFIFOLastBits();
   if (lastBits != 0U) {
+    if (console_ != nullptr) {
+      console_->print(F("HF card raw RX incomplete fifo="));
+      console_->print(fifoBytes);
+      console_->print(F(" lastBits="));
+      console_->println(lastBits);
+    }
     hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_CLEAR_FIFO);
     return ERR_INCOMPLETE_BYTE;
   }
 
-  const uint16_t fifoBytes = hfReader_->st25r3916GetNumFIFOBytes();
   if (fifoBytes == 0U) {
     return ERR_BUSY;
   }
