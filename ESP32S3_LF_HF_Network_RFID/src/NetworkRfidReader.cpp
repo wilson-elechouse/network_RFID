@@ -170,6 +170,11 @@ bool NetworkRfidReader::begin(const NetworkRfidConfig& config, Stream& console, 
   config_ = config;
   console_ = &console;
   primaryConsole_ = &console;
+  pinMode(0, INPUT_PULLUP);
+#if defined(GPIO_NUM_0)
+  gpio_pullup_en(GPIO_NUM_0);
+  gpio_pulldown_dis(GPIO_NUM_0);
+#endif
   if (console_ != nullptr) {
     console_->println();
     console_->println(F("RFID begin"));
@@ -365,6 +370,16 @@ void NetworkRfidReader::loop() {
       setActiveSlot(NetworkRfidSlot::LF);
     }
     processLfPulses();
+    return;
+  }
+
+  if (config_.hfRole == NetworkRfidHfRole::CardEmulation) {
+    if (activeSlot_ != NetworkRfidSlot::HF) {
+      setActiveSlot(NetworkRfidSlot::HF);
+    }
+    if (hfReady_) {
+      serviceHf();
+    }
     return;
   }
 
@@ -2329,6 +2344,10 @@ void NetworkRfidReader::handleHfCommand(String rest) {
       config_.hfRole = NetworkRfidHfRole::Scan;
     } else if (mode == "card" || mode == "emu" || mode == "cardemu" || mode == "listen") {
       config_.hfRole = NetworkRfidHfRole::CardEmulation;
+      config_.autoInitHf = true;
+      if (!hfReady_) {
+        hfReady_ = setupHf();
+      }
     } else if (mode == "p2p" || mode == "peer") {
       console_->println(F("ERR hf p2p disabled"));
       return;
@@ -2387,9 +2406,23 @@ void NetworkRfidReader::handleHfCommand(String rest) {
   }
 
   if (sub == "card" || sub == "emu" || sub == "cardemu") {
-    const String action = lowerCopy(nextToken(rest));
+    String action = lowerCopy(nextToken(rest));
+    String assigned_uid;
+    if (action.startsWith("uid=")) {
+      assigned_uid = action.substring(4);
+      rest.trim();
+      if (rest.length() > 0) {
+        assigned_uid += ' ';
+        assigned_uid += rest;
+      }
+      action = "uid";
+    }
     if (action.length() == 0 || action == "status") {
-      console_->print(F("hf card uid="));
+      console_->print(F("hf card role="));
+      console_->print(hfRoleName(config_.hfRole));
+      console_->print(F(" ready="));
+      console_->print(hfReady_ ? F("yes") : F("no"));
+      console_->print(F(" uid="));
       console_->print(config_.hfCardUid);
       console_->print(F(" active="));
       console_->print(hfCardEmulationActive_ ? F("yes") : F("no"));
@@ -2436,21 +2469,39 @@ void NetworkRfidReader::handleHfCommand(String rest) {
       return;
     }
     if (action == "uid") {
-      rest.trim();
+      String uid_text = assigned_uid.length() > 0 ? assigned_uid : rest;
+      uid_text.trim();
+      String lower_uid = lowerCopy(uid_text);
+      int cut_pos = -1;
+      const char* markers[] = {" active=", " state=", " type=", " ndef=", " payload=", " ssid="};
+      for (size_t i = 0; i < (sizeof(markers) / sizeof(markers[0])); ++i) {
+        const int marker_pos = lower_uid.indexOf(markers[i]);
+        if (marker_pos >= 0 && (cut_pos < 0 || marker_pos < cut_pos)) {
+          cut_pos = marker_pos;
+        }
+      }
+      if (cut_pos >= 0) {
+        uid_text = uid_text.substring(0, cut_pos);
+        uid_text.trim();
+      }
       size_t uid_len = 0;
       uint8_t uid[RFAL_NFCID1_TRIPLE_LEN] = {};
-      if (!parseHexBytes(rest, uid, sizeof(uid), uid_len) ||
+      if (!parseHexBytes(uid_text, uid, sizeof(uid), uid_len) ||
           (uid_len != 4 && uid_len != 7)) {
         console_->println(F("ERR hf card uid <4|7-byte-uid-hex>"));
         return;
       }
       config_.hfCardUid = hexBytes(uid, uid_len, true);
-      stopHfCardEmulation();
-      if (config_.hfRole == NetworkRfidHfRole::CardEmulation) {
-        startHfCardEmulation();
+      config_.hfRole = NetworkRfidHfRole::CardEmulation;
+      config_.autoInitHf = true;
+      if (!hfReady_) {
+        hfReady_ = setupHf();
       }
+      restartHfRole();
       console_->print(F("OK hf card uid="));
-      console_->println(config_.hfCardUid);
+      console_->print(config_.hfCardUid);
+      console_->print(F(" active="));
+      console_->println(hfCardEmulationActive_ ? F("yes") : F("no"));
       return;
     }
     if (action == "ndef" || action == "payload") {
@@ -2482,7 +2533,7 @@ void NetworkRfidReader::handleHfCommand(String rest) {
       console_->println(hfCardPayloadTypeName(config_.hfCardPayloadType));
       return;
     }
-    console_->println(F("ERR hf card on [uid]|off|uid <hex>|ndef url|text|vcard|wifi <payload>|status"));
+    console_->println(F("ERR hf card on [uid]|off|uid <hex>|uid=<hex>|ndef url|text|vcard|wifi <payload>|status"));
     return;
   }
 
@@ -4950,7 +5001,7 @@ void NetworkRfidReader::printHelp() {
   console_->println(F("  lf raw <count> | lf hid [ms] | lf indala [samples]"));
   console_->println(F("  hf probe | hf speed <hz> | hf init | hf off | hf status"));
   console_->println(F("  hf mode scan|card | hf tech a|b|f|v on|off"));
-  console_->println(F("  hf card on [uid]|off|uid <hex>|ndef url|text|vcard|wifi <payload>|status"));
+  console_->println(F("  hf card on [uid]|off|uid <hex>|uid=<hex>|ndef url|text|vcard|wifi <payload>|status"));
   console_->println(F("  format json|line"));
   console_->println(F("  window <lf_ms> <hf_ms>"));
   console_->println(F("  dedupe <ms>"));

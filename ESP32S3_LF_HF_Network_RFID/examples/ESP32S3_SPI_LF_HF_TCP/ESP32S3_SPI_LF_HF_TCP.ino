@@ -5,6 +5,10 @@
 NetworkRfidReader reader;
 
 void setup() {
+  // Keep BOOT/GPIO0 biased high after the application starts. This cannot
+  // override a held BOOT button during reset, but helps if the pin is floating.
+  pinMode(0, INPUT_PULLUP);
+
   Serial.begin(115200);
   const unsigned long start = millis();
   while (!Serial && (millis() - start) < 2000UL) {
