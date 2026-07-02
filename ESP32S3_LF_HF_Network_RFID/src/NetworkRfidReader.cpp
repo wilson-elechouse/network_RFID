@@ -1468,7 +1468,12 @@ bool NetworkRfidReader::configureHfCardDirectListener(const uint8_t* uid, size_t
                                               ST25R3916_REG_OP_CONTROL_en_fd_auto_efd);
   }
   if (err == ERR_NONE) {
-    hfReader_->st25r3916SetBitrate(RFAL_BR_106, RFAL_BR_106);
+    err = hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_STOP);
+  }
+  if (err == ERR_NONE) {
+    err = hfReader_->st25r3916SetBitrate(RFAL_BR_106, RFAL_BR_106);
+  }
+  if (err == ERR_NONE) {
     hfReader_->st25r3916ClearAndEnableInterrupts(kHfCardDirectIrqs);
     err = hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_GOTO_SENSE);
   }
@@ -1506,7 +1511,11 @@ void NetworkRfidReader::serviceHfCardDirectState() {
     return;
   }
 
-  if (console_ != nullptr) {
+  const bool timeCritical = (irqs & (ST25R3916_IRQ_MASK_NFCT |
+                                      ST25R3916_IRQ_MASK_RXE_PTA |
+                                      ST25R3916_IRQ_MASK_WU_A |
+                                      ST25R3916_IRQ_MASK_WU_A_X)) != 0U;
+  if (!timeCritical && console_ != nullptr) {
     console_->print(F("HF card direct irq=0x"));
     console_->print(irqs, HEX);
     console_->print(F(" state="));
@@ -1543,10 +1552,6 @@ void NetworkRfidReader::serviceHfCardDirectState() {
     hfReader_->st25r3916GetInterrupt(kHfCardRawErrorIrqs | ST25R3916_IRQ_MASK_RXE);
     enableHfCardDirectRx();
     hfLastLmState_ = ((irqs & ST25R3916_IRQ_MASK_WU_A_X) != 0U) ? RFAL_LM_STATE_ACTIVE_Ax : RFAL_LM_STATE_ACTIVE_A;
-    if (console_ != nullptr) {
-      console_->print(F("HF card direct active type="));
-      console_->println(((irqs & ST25R3916_IRQ_MASK_WU_A_X) != 0U) ? F("A*") : F("A"));
-    }
   }
 }
 
@@ -1567,6 +1572,12 @@ void NetworkRfidReader::logHfCardDirectState(uint8_t status) {
   const rfalLmState mapped = hfPtaToLmState(state);
   if (mapped != RFAL_LM_STATE_NOT_INIT) {
     hfLastLmState_ = mapped;
+  }
+  if (mapped == RFAL_LM_STATE_READY_A ||
+      mapped == RFAL_LM_STATE_READY_Ax ||
+      mapped == RFAL_LM_STATE_ACTIVE_A ||
+      mapped == RFAL_LM_STATE_ACTIVE_Ax) {
+    return;
   }
   if (console_ != nullptr) {
     console_->print(F("HF card direct state="));
@@ -1613,6 +1624,13 @@ bool NetworkRfidReader::handleHfCardListenFrame(const uint8_t* data, size_t leng
     console_->println(hfReader_->rfalIsExtFieldOn() ? F("on") : F("off"));
     console_->print(F("HF card RATS="));
     console_->println(hexBytes(data, length, true));
+    uint8_t status = 0;
+    if (hfReader_->st25r3916ReadRegister(ST25R3916_REG_PASSIVE_TARGET_STATUS, &status) == ERR_NONE) {
+      console_->print(F("HF card direct state="));
+      console_->print(hfPtaStateName(status));
+      console_->print(F(" raw=0x"));
+      console_->println(status, HEX);
+    }
   }
   return sent;
 }
