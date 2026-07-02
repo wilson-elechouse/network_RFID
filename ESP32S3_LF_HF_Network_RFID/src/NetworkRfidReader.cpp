@@ -92,6 +92,15 @@ constexpr uint32_t kHfCardRawErrorIrqs = ST25R3916_IRQ_MASK_PAR |
                                          ST25R3916_IRQ_MASK_CRC |
                                          ST25R3916_IRQ_MASK_ERR1 |
                                          ST25R3916_IRQ_MASK_ERR2;
+constexpr uint32_t kHfCardDirectStateIrqs = ST25R3916_IRQ_MASK_EON |
+                                            ST25R3916_IRQ_MASK_EOF |
+                                            ST25R3916_IRQ_MASK_NFCT |
+                                            ST25R3916_IRQ_MASK_RXE_PTA |
+                                            ST25R3916_IRQ_MASK_WU_A |
+                                            ST25R3916_IRQ_MASK_WU_A_X;
+constexpr uint32_t kHfCardDirectIrqs = kHfCardRawIrqs |
+                                       kHfCardDirectStateIrqs |
+                                       ST25R3916_IRQ_MASK_OSC;
 
 uint16_t iso14443aCrc(const uint8_t* data, size_t length) {
   uint16_t crc = kIso14443aCrcInit;
@@ -104,6 +113,54 @@ uint16_t iso14443aCrc(const uint8_t* data, size_t length) {
                                 (byte >> 4));
   }
   return crc;
+}
+
+const char* hfPtaStateName(uint8_t state) {
+  switch (state & ST25R3916_REG_PASSIVE_TARGET_STATUS_pta_state_mask) {
+    case ST25R3916_REG_PASSIVE_TARGET_STATUS_pta_st_power_off:
+      return "POWER_OFF";
+    case ST25R3916_REG_PASSIVE_TARGET_STATUS_pta_st_idle:
+      return "IDLE";
+    case ST25R3916_REG_PASSIVE_TARGET_STATUS_pta_st_ready_l1:
+      return "READY_L1";
+    case ST25R3916_REG_PASSIVE_TARGET_STATUS_pta_st_ready_l2:
+      return "READY_L2";
+    case ST25R3916_REG_PASSIVE_TARGET_STATUS_pta_st_active:
+      return "ACTIVE";
+    case ST25R3916_REG_PASSIVE_TARGET_STATUS_pta_st_halt:
+      return "HALT";
+    case ST25R3916_REG_PASSIVE_TARGET_STATUS_pta_st_ready_l1_x:
+      return "READY_L1_X";
+    case ST25R3916_REG_PASSIVE_TARGET_STATUS_pta_st_ready_l2_x:
+      return "READY_L2_X";
+    case ST25R3916_REG_PASSIVE_TARGET_STATUS_pta_st_active_x:
+      return "ACTIVE_X";
+    default:
+      return "RFU";
+  }
+}
+
+rfalLmState hfPtaToLmState(uint8_t state) {
+  switch (state & ST25R3916_REG_PASSIVE_TARGET_STATUS_pta_state_mask) {
+    case ST25R3916_REG_PASSIVE_TARGET_STATUS_pta_st_power_off:
+      return RFAL_LM_STATE_POWER_OFF;
+    case ST25R3916_REG_PASSIVE_TARGET_STATUS_pta_st_idle:
+      return RFAL_LM_STATE_IDLE;
+    case ST25R3916_REG_PASSIVE_TARGET_STATUS_pta_st_ready_l1:
+    case ST25R3916_REG_PASSIVE_TARGET_STATUS_pta_st_ready_l2:
+      return RFAL_LM_STATE_READY_A;
+    case ST25R3916_REG_PASSIVE_TARGET_STATUS_pta_st_ready_l1_x:
+    case ST25R3916_REG_PASSIVE_TARGET_STATUS_pta_st_ready_l2_x:
+      return RFAL_LM_STATE_READY_Ax;
+    case ST25R3916_REG_PASSIVE_TARGET_STATUS_pta_st_active:
+      return RFAL_LM_STATE_ACTIVE_A;
+    case ST25R3916_REG_PASSIVE_TARGET_STATUS_pta_st_active_x:
+      return RFAL_LM_STATE_ACTIVE_Ax;
+    case ST25R3916_REG_PASSIVE_TARGET_STATUS_pta_st_halt:
+      return RFAL_LM_STATE_SLEEP_A;
+    default:
+      return RFAL_LM_STATE_NOT_INIT;
+  }
 }
 constexpr uint8_t kT4tCcFile[] = {
   0x00, 0x0F,
@@ -1252,6 +1309,7 @@ bool NetworkRfidReader::startHfCardEmulation() {
   hfListenRxBits_ = 0;
   memset(hfListenRxBuf_, 0, sizeof(hfListenRxBuf_));
   hfLastLmState_ = RFAL_LM_STATE_NOT_INIT;
+  hfCardLastPtState_ = 0xFF;
 
   if (nfc_ != nullptr && nfc_->rfalNfcGetState() > RFAL_NFC_STATE_IDLE) {
     nfc_->rfalNfcDeactivate(false);
@@ -1260,27 +1318,13 @@ bool NetworkRfidReader::startHfCardEmulation() {
   hfDataExchangeActive_ = false;
   hfReader_->rfalFieldOff();
 
-  const ReturnCode err = hfReader_->rfalListenStart(RFAL_LM_MASK_NFCA,
-                                                    &hfCardEmuA_,
-                                                    nullptr,
-                                                    nullptr,
-                                                    hfListenRxBuf_,
-                                                    sizeof(hfListenRxBuf_) * 8U,
-                                                    &hfListenRxBits_);
-  if (err != ERR_NONE) {
-    if (console_ != nullptr) {
-      console_->print(F("HF card emulation failed: "));
-      console_->println(static_cast<int>(err));
-      if (err == ERR_NOTSUPP) {
-        console_->println(F("HF card emulation is not implemented in the ST25R3916 RF driver yet"));
-      }
-    }
+  if (!configureHfCardDirectListener(uid, uid_len)) {
     return false;
   }
 
   hfCardEmulationActive_ = true;
   if (console_ != nullptr) {
-    console_->print(F("HF card emulation active uid="));
+    console_->print(F("HF card direct emulation active uid="));
     console_->println(hexBytes(hfCardEmuA_.nfcid, uid_len, true));
   }
   return true;
@@ -1288,7 +1332,13 @@ bool NetworkRfidReader::startHfCardEmulation() {
 
 void NetworkRfidReader::stopHfCardEmulation() {
   if (hfReader_ != nullptr && hfCardEmulationActive_) {
-    hfReader_->rfalListenStop();
+    hfReader_->st25r3916DisableInterrupts(ST25R3916_IRQ_MASK_ALL);
+    hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_STOP);
+    hfReader_->st25r3916WriteRegister(ST25R3916_REG_MODE, ST25R3916_REG_MODE_om0);
+    hfReader_->st25r3916ClrRegisterBits(ST25R3916_REG_OP_CONTROL,
+                                        ST25R3916_REG_OP_CONTROL_rx_en |
+                                          ST25R3916_REG_OP_CONTROL_tx_en |
+                                          ST25R3916_REG_OP_CONTROL_en_fd_mask);
   }
   hfCardEmulationActive_ = false;
   resetHfCardProtocol();
@@ -1310,40 +1360,225 @@ void NetworkRfidReader::serviceHfCardEmulation() {
     return;
   }
 
-  hfReader_->rfalWorker();
-  bool data_flag = false;
-  rfalBitRate last_br = RFAL_BR_106;
-  const rfalLmState state = hfReader_->rfalListenGetState(&data_flag, &last_br);
-  const bool stateChanged = (state != hfLastLmState_);
+  serviceHfCardDirectState();
 
-  if (data_flag && hfListenRxBits_ > 0) {
-    const size_t rx_bytes = (hfListenRxBits_ + 7U) / 8U;
-    const bool handled = handleHfCardListenFrame(hfListenRxBuf_, rx_bytes);
-    if (stateChanged) {
-      hfLastLmState_ = state;
-      if (console_ != nullptr) {
-        console_->print(F("HF card state="));
-        console_->println(hfLmStateName(state));
-      }
-    }
-    if (!handled) {
-      emitCard("HF", "CARD-RX", hexBytes(hfListenRxBuf_, rx_bytes, true));
-      hfReader_->rfalListenSetState(state);
-    }
+  if (hfLastLmState_ != RFAL_LM_STATE_ACTIVE_A && hfLastLmState_ != RFAL_LM_STATE_ACTIVE_Ax) {
     return;
   }
 
-  if (stateChanged) {
-    hfLastLmState_ = state;
-    if (console_ != nullptr) {
-      console_->print(F("HF card state="));
-      console_->println(hfLmStateName(state));
+  size_t rx_bytes = 0;
+  const ReturnCode ret = pollHfCardRawFrame(rx_bytes);
+  if (ret == ERR_BUSY) {
+    return;
+  }
+
+  if (ret != ERR_NONE) {
+    if (ret != ERR_TIMEOUT && console_ != nullptr) {
+      console_->print(F("HF card direct RATS RX discarded: "));
+      console_->println(static_cast<int>(ret));
     }
+    enableHfCardDirectRx();
+    return;
+  }
+
+  if (!handleHfCardListenFrame(hfListenRxBuf_, rx_bytes)) {
+    if (console_ != nullptr) {
+      console_->print(F("HF card direct RX before RATS="));
+      console_->println(hexBytes(hfListenRxBuf_, rx_bytes, true));
+    }
+    enableHfCardDirectRx();
+  }
+}
+
+bool NetworkRfidReader::configureHfCardDirectListener(const uint8_t* uid, size_t uidLen) {
+  if (hfReader_ == nullptr || uid == nullptr || (uidLen != 4U && uidLen != 7U)) {
+    return false;
+  }
+
+  uint8_t ptMem[ST25R3916_PTM_A_LEN] = {};
+  memcpy(ptMem, uid, uidLen);
+  ptMem[10] = 0x04;
+  ptMem[11] = 0x00;
+  ptMem[12] = (uidLen == 4U) ? 0x20 : 0x24;
+  ptMem[13] = 0x20;
+  ptMem[14] = 0x20;
+
+  ReturnCode err = hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_STOP);
+  if (err == ERR_NONE) {
+    hfReader_->st25r3916DisableInterrupts(ST25R3916_IRQ_MASK_ALL);
+    hfReader_->st25r3916ClearInterrupts();
+    err = hfReader_->st25r3916ChangeRegisterBits(ST25R3916_REG_AUX,
+                                                 ST25R3916_REG_AUX_nfc_id_mask,
+                                                 uidLen == 4U ? ST25R3916_REG_AUX_nfc_id_4bytes :
+                                                               ST25R3916_REG_AUX_nfc_id_7bytes);
+  }
+  if (err == ERR_NONE) {
+    err = hfReader_->st25r3916WritePTMem(ptMem, sizeof(ptMem));
+  }
+  if (err == ERR_NONE) {
+    err = hfReader_->st25r3916WriteRegister(ST25R3916_REG_RX_CONF1, ST25R3916_REG_RX_CONF1_z600k);
+  }
+  if (err == ERR_NONE) {
+    err = hfReader_->st25r3916WriteRegister(ST25R3916_REG_RX_CONF2,
+                                            ST25R3916_REG_RX_CONF2_agc6_3 |
+                                              ST25R3916_REG_RX_CONF2_agc_m |
+                                              ST25R3916_REG_RX_CONF2_agc_en |
+                                              ST25R3916_REG_RX_CONF2_sqm_dyn);
+  }
+  if (err == ERR_NONE) {
+    err = hfReader_->st25r3916WriteRegister(ST25R3916_REG_RX_CONF3, 0x00);
+  }
+  if (err == ERR_NONE) {
+    err = hfReader_->st25r3916WriteRegister(ST25R3916_REG_RX_CONF4, 0x00);
+  }
+  if (err == ERR_NONE) {
+    err = hfReader_->st25r3916WriteRegister(ST25R3916_REG_CORR_CONF1,
+                                            ST25R3916_REG_CORR_CONF1_corr_s0 |
+                                              ST25R3916_REG_CORR_CONF1_corr_s4 |
+                                              ST25R3916_REG_CORR_CONF1_corr_s6);
+  }
+  if (err == ERR_NONE) {
+    err = hfReader_->st25r3916WriteRegister(ST25R3916_REG_CORR_CONF2, 0x00);
+  }
+  if (err == ERR_NONE) {
+    err = hfReader_->st25r3916WriteRegister(ST25R3916_REG_MASK_RX_TIMER, 0x02);
+  }
+  if (err == ERR_NONE) {
+    err = hfReader_->st25r3916WriteRegister(ST25R3916_REG_PASSIVE_TARGET,
+                                            ST25R3916_REG_PASSIVE_TARGET_fdel_2 |
+                                              ST25R3916_REG_PASSIVE_TARGET_fdel_0 |
+                                              ST25R3916_REG_PASSIVE_TARGET_d_ac_ap2p |
+                                              ST25R3916_REG_PASSIVE_TARGET_d_212_424_1r);
+  }
+  if (err == ERR_NONE) {
+    err = hfReader_->st25r3916ClrRegisterBits(ST25R3916_REG_ISO14443A_NFC,
+                                              ST25R3916_REG_ISO14443A_NFC_no_tx_par |
+                                                ST25R3916_REG_ISO14443A_NFC_no_rx_par |
+                                                ST25R3916_REG_ISO14443A_NFC_nfc_f0);
+  }
+  if (err == ERR_NONE) {
+    err = hfReader_->st25r3916WriteRegister(ST25R3916_REG_MODE,
+                                            ST25R3916_REG_MODE_targ_targ |
+                                              ST25R3916_REG_MODE_om_targ_nfca);
+  }
+  if (err == ERR_NONE) {
+    err = hfReader_->st25r3916WriteRegister(ST25R3916_REG_OP_CONTROL,
+                                            ST25R3916_REG_OP_CONTROL_en |
+                                              ST25R3916_REG_OP_CONTROL_rx_en |
+                                              ST25R3916_REG_OP_CONTROL_en_fd_auto_efd);
+  }
+  if (err == ERR_NONE) {
+    hfReader_->st25r3916SetBitrate(RFAL_BR_106, RFAL_BR_106);
+    hfReader_->st25r3916ClearAndEnableInterrupts(kHfCardDirectIrqs);
+    err = hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_GOTO_SENSE);
+  }
+  if (err == ERR_NONE) {
+    err = hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_UNMASK_RECEIVE_DATA);
+  }
+
+  if (err != ERR_NONE) {
+    if (console_ != nullptr) {
+      console_->print(F("HF card direct listener failed: "));
+      console_->println(static_cast<int>(err));
+    }
+    return false;
+  }
+
+  uint8_t status = 0;
+  if (hfReader_->st25r3916ReadRegister(ST25R3916_REG_PASSIVE_TARGET_STATUS, &status) == ERR_NONE) {
+    logHfCardDirectState(status);
+  }
+  return true;
+}
+
+void NetworkRfidReader::serviceHfCardDirectState() {
+  if (hfReader_ == nullptr) {
+    return;
+  }
+
+  uint8_t status = 0;
+  if (hfReader_->st25r3916ReadRegister(ST25R3916_REG_PASSIVE_TARGET_STATUS, &status) == ERR_NONE) {
+    logHfCardDirectState(status);
+  }
+
+  const uint32_t irqs = hfReader_->st25r3916GetInterrupt(kHfCardDirectStateIrqs);
+  if (irqs == 0U) {
+    return;
+  }
+
+  if (console_ != nullptr) {
+    console_->print(F("HF card direct irq=0x"));
+    console_->print(irqs, HEX);
+    console_->print(F(" state="));
+    console_->println(hfPtaStateName(status));
+  }
+
+  if ((irqs & ST25R3916_IRQ_MASK_EOF) != 0U) {
+    hfCardIsoDepActive_ = false;
+    hfCardIsoDepStartMs_ = 0;
+    hfCardLastTxLen_ = 0;
+    hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_STOP);
+    hfReader_->st25r3916ClrRegisterBits(ST25R3916_REG_PASSIVE_TARGET, ST25R3916_REG_PASSIVE_TARGET_d_106_ac_a);
+    hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_GOTO_SENSE);
+    hfLastLmState_ = RFAL_LM_STATE_POWER_OFF;
+    return;
+  }
+
+  if ((irqs & ST25R3916_IRQ_MASK_EON) != 0U) {
+    hfReader_->st25r3916ClrRegisterBits(ST25R3916_REG_PASSIVE_TARGET, ST25R3916_REG_PASSIVE_TARGET_d_106_ac_a);
+    hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_GOTO_SENSE);
+    hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_UNMASK_RECEIVE_DATA);
+    hfLastLmState_ = RFAL_LM_STATE_IDLE;
+  }
+
+  if ((irqs & ST25R3916_IRQ_MASK_RXE_PTA) != 0U) {
+    if (hfReader_->st25r3916ReadRegister(ST25R3916_REG_PASSIVE_TARGET_STATUS, &status) == ERR_NONE) {
+      logHfCardDirectState(status);
+    }
+  }
+
+  if ((irqs & (ST25R3916_IRQ_MASK_WU_A | ST25R3916_IRQ_MASK_WU_A_X)) != 0U) {
+    hfReader_->st25r3916SetBitrate(RFAL_BR_106, RFAL_BR_106);
+    hfReader_->st25r3916SetRegisterBits(ST25R3916_REG_PASSIVE_TARGET, ST25R3916_REG_PASSIVE_TARGET_d_106_ac_a);
+    hfReader_->st25r3916GetInterrupt(kHfCardRawErrorIrqs | ST25R3916_IRQ_MASK_RXE);
+    enableHfCardDirectRx();
+    hfLastLmState_ = ((irqs & ST25R3916_IRQ_MASK_WU_A_X) != 0U) ? RFAL_LM_STATE_ACTIVE_Ax : RFAL_LM_STATE_ACTIVE_A;
+    if (console_ != nullptr) {
+      console_->print(F("HF card direct active type="));
+      console_->println(((irqs & ST25R3916_IRQ_MASK_WU_A_X) != 0U) ? F("A*") : F("A"));
+    }
+  }
+}
+
+void NetworkRfidReader::enableHfCardDirectRx() {
+  if (hfReader_ == nullptr) {
+    return;
+  }
+  hfReader_->st25r3916EnableInterrupts(kHfCardDirectIrqs);
+  hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_UNMASK_RECEIVE_DATA);
+}
+
+void NetworkRfidReader::logHfCardDirectState(uint8_t status) {
+  const uint8_t state = status & ST25R3916_REG_PASSIVE_TARGET_STATUS_pta_state_mask;
+  if (state == hfCardLastPtState_) {
+    return;
+  }
+  hfCardLastPtState_ = state;
+  const rfalLmState mapped = hfPtaToLmState(state);
+  if (mapped != RFAL_LM_STATE_NOT_INIT) {
+    hfLastLmState_ = mapped;
+  }
+  if (console_ != nullptr) {
+    console_->print(F("HF card direct state="));
+    console_->print(hfPtaStateName(state));
+    console_->print(F(" raw=0x"));
+    console_->println(status, HEX);
   }
 }
 
 void NetworkRfidReader::resetHfCardProtocol() {
   hfLastLmState_ = RFAL_LM_STATE_NOT_INIT;
+  hfCardLastPtState_ = 0xFF;
   hfListenRxBits_ = 0;
   hfCardIsoDepActive_ = false;
   hfCardIsoDepStartMs_ = 0;
@@ -1370,12 +1605,14 @@ bool NetworkRfidReader::handleHfCardListenFrame(const uint8_t* data, size_t leng
   hfCardIsoDepStartMs_ = millis();
   hfCardExpectedBlock_ = 0;
   hfCardSelectedFile_ = kT4tFileNone;
-  hfReader_->rfalListenSetState(RFAL_LM_STATE_CARDEMU_4A);
+  hfLastLmState_ = RFAL_LM_STATE_CARDEMU_4A;
 
   const bool sent = sendHfCardIsoDepFrame(ats, sizeof(ats), true);
   if (sent && console_ != nullptr) {
     console_->print(F("HF card RATS -> ATS field="));
     console_->println(hfReader_->rfalIsExtFieldOn() ? F("on") : F("off"));
+    console_->print(F("HF card RATS="));
+    console_->println(hexBytes(data, length, true));
   }
   return sent;
 }
@@ -1412,7 +1649,12 @@ void NetworkRfidReader::serviceHfCardIsoDep() {
   }
 
   hfCardIsoDepStartMs_ = millis();
-  if (!handleHfCardIsoDepFrame(hfListenRxBuf_, rx_bytes)) {
+  const bool handled = handleHfCardIsoDepFrame(hfListenRxBuf_, rx_bytes);
+  if (handled && console_ != nullptr) {
+    console_->print(F("HF card ISO-DEP RX="));
+    console_->println(hexBytes(hfListenRxBuf_, rx_bytes, true));
+  }
+  if (!handled) {
     restartHfCardEmulation();
   }
 }

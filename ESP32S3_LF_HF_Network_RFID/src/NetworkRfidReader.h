@@ -233,6 +233,10 @@ private:
   bool startHfCardEmulation();
   void stopHfCardEmulation();
   void serviceHfCardEmulation();
+  bool configureHfCardDirectListener(const uint8_t* uid, size_t uidLen);
+  void serviceHfCardDirectState();
+  void enableHfCardDirectRx();
+  void logHfCardDirectState(uint8_t status);
   void resetHfCardProtocol();
   void serviceHfCardIsoDep();
   bool handleHfCardListenFrame(const uint8_t* data, size_t length);
@@ -372,6 +376,7 @@ private:
   uint8_t hfListenRxBuf_[RFAL_NFC_RF_BUF_LEN] = {};
   uint16_t hfListenRxBits_ = 0;
   rfalLmState hfLastLmState_ = RFAL_LM_STATE_NOT_INIT;
+  uint8_t hfCardLastPtState_ = 0xFF;
   bool hfCardIsoDepActive_ = false;
   uint32_t hfCardIsoDepStartMs_ = 0;
   uint8_t hfCardExpectedBlock_ = 0;
