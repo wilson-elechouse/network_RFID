@@ -238,6 +238,8 @@ private:
   bool handleHfCardListenFrame(const uint8_t* data, size_t length);
   bool handleHfCardIsoDepFrame(const uint8_t* frame, size_t length);
   bool sendHfCardIsoDepFrame(const uint8_t* frame, size_t length, bool expectRx);
+  ReturnCode pollHfCardRawFrame(size_t& rxBytes);
+  void restartHfCardEmulation();
   size_t buildHfNdefMessage(uint8_t* out, size_t maxLength) const;
   size_t buildHfNdefFile(uint8_t* out, size_t maxLength) const;
   size_t buildHfT4tApduResponse(const uint8_t* apdu, size_t apduLen, uint8_t* out, size_t maxLength);
