@@ -1,0 +1,573 @@
+# ELECHOUSE RFID TCP Broker Firmware Guide
+
+Applicable firmware: `ESP32S3_LF_HF_Network_RFID`
+
+Applicable hardware: ELECHOUSE Network RFID Reader Mainboard, current controller board ESP32-S3 SuperMini, ST25R3916B HF frontend, HF bus fixed to I2C.
+
+Web test page:
+
+```text
+https://www.elechouse.com/rfid-tcp-broker/
+```
+
+Firmware guide page:
+
+```text
+https://www.elechouse.com/rfid-tcp-broker/firmware
+```
+
+---
+
+## 1. Purpose
+
+The ELECHOUSE online test feature is used to verify the network path of an RFID/NFC reader:
+
+- The web test page generates a one-time `session_code`.
+- The device opens a plain TCP socket to the ELECHOUSE Broker.
+- After the TCP connection is established, the device sends `HELLO <session_code> <device_id>`.
+- The Broker binds the device TCP connection to the web session by `session_code`.
+- LF/HF card read events are uploaded to the web page in real time.
+- The web page can send firmware commands back through the same TCP socket.
+
+The device does not need HTTP, HTTPS, or WebSocket support. The current firmware has a built-in `ELECHOUSE Test` mode. The user only needs to enter the `session_code` assigned by the web page.
+
+---
+
+## 2. Fixed Connection Parameters
+
+In `ELECHOUSE Test` mode, these parameters are fixed in firmware and do not need user configuration:
+
+```text
+TCP Host: www.elechouse.com
+TCP Port: 9000
+Protocol: plain TCP
+Encoding: ASCII / UTF-8 text lines
+Line ending: \n or \r\n
+```
+
+The firmware still supports normal TCP `Client` and `Server` modes. Only `ELECHOUSE Test` mode forces the fixed server address above.
+
+---
+
+## 3. session_code Rules
+
+The `session_code` is assigned dynamically by the web test page. It is not a fixed value. The old code may become invalid when the web page is refreshed, closed, expired, or regenerated.
+
+Allowed characters in the current firmware:
+
+```text
+A-Z a-z 0-9 _ . : -
+```
+
+Maximum length:
+
+```text
+64 characters
+```
+
+When `ELECHOUSE Test` is selected on the configuration page, `ELECHOUSE code` is required and must match the character rules above.
+
+---
+
+## 4. Handshake Protocol
+
+After the TCP connection is established, the firmware automatically sends:
+
+```text
+HELLO <session_code> <device_id>\n
+```
+
+The current firmware uses this `device_id` format:
+
+```text
+ELECHOUSE_RFID-<WiFi MAC>
+```
+
+Example:
+
+```text
+HELLO EKQWQ4XZ ELECHOUSE_RFID-68:EE:8F:DD:ED:04
+```
+
+If the handshake succeeds, the Broker replies:
+
+```text
+OK <session_code>
+```
+
+Firmware serial log example:
+
+```text
+ELECHOUSE broker OK EKQWQ4XZ
+```
+
+If the handshake fails, the Broker replies:
+
+```text
+ERR <reason>
+```
+
+After receiving `ERR`, the firmware closes the TCP connection and keeps retrying with the current `session_code` according to the reconnect interval.
+
+Common errors:
+
+```text
+ERR hello_timeout
+ERR hello_format_must_be_HELLO_CODE
+ERR invalid_code
+ERR unknown_or_expired_code
+ERR code_already_has_device
+ERR hello_too_large
+```
+
+`ERR unknown_or_expired_code` usually means the web session has expired, does not exist, was refreshed, or the device is still using an old `session_code`. Generate a new code on the web page, then update the device through the web configuration page or command line.
+
+---
+
+## 5. Card Data Upload
+
+After the handshake succeeds, the current firmware uploads card events as JSON Lines. Each JSON object is followed by `\n`.
+
+Format:
+
+```json
+{"type":"card","band":"HF","card_type":"ISO14443A","uid":"1C 2C FB 10","ms":1002132}
+```
+
+Field description:
+
+| Field | Description |
+|---|---|
+| `type` | Fixed to `card` |
+| `band` | `LF` or `HF` |
+| `card_type` | Card type, such as `ISO14443A`, `EM4100`, or `HIDProx` |
+| `uid` | UID or decoded card ID string |
+| `ms` | Device `millis()` timestamp since boot |
+
+Note: USB CDC, product UART, and normal TCP modes may use the firmware's general output format. In `ELECHOUSE Test` mode, data uploaded to the Broker always uses the JSON Lines format above.
+
+---
+
+## 6. Commands Sent Back From the Web Page
+
+After the handshake succeeds, the web test page can send one text command line to the device through the Broker. The current firmware parses these lines with its existing command system.
+
+Examples:
+
+```text
+status
+wifi status
+tcp status
+elechouse status
+test
+```
+
+The firmware separates commands by line ending. Commands sent from the web page should end with `\n`.
+
+In `ELECHOUSE Test` mode, the firmware handles Broker control lines internally:
+
+- `PONG` or `OK ...`: handled internally and not executed as a firmware command.
+- `PING`: replies with `PONG\n`.
+- Other text lines: if `TCP commands` is enabled, the line is passed to the firmware command parser.
+
+---
+
+## 7. Heartbeat and Reconnect
+
+After the Broker handshake succeeds, the firmware sends this heartbeat every 20 seconds:
+
+```text
+PING
+```
+
+The Broker may reply:
+
+```text
+PONG
+```
+
+If the TCP connection is closed, the firmware reconnects according to the `TCP reconnect ms` parameter. The minimum effective reconnect interval is 1000 ms. If the web session has expired, the device will keep receiving `ERR unknown_or_expired_code` while retrying with the old code. Update the device with a new `session_code`.
+
+---
+
+## 8. Web Configuration
+
+1. On first boot, or when WiFi connection fails, the device starts a configuration hotspot.
+2. Join the device hotspot and open:
+
+```text
+http://10.10.10.10/
+```
+
+3. Enter the router SSID and password in the `WiFi` section.
+4. Configure the `TCP Socket` section:
+
+| Item | Setting |
+|---|---|
+| `Mode` | `ELECHOUSE Test` |
+| `ELECHOUSE code` | `session_code` assigned by the web test page |
+| `TCP events` | Recommended on |
+| `TCP commands` | Enable if commands need to be sent from the web page |
+
+5. Click `Save`. The current firmware saves the configuration and reboots automatically.
+6. After reboot, the device connects to the router first. After the station connection succeeds, the configuration hotspot is turned off.
+7. In `ELECHOUSE Test` mode, the device automatically connects to `www.elechouse.com:9000` and performs the handshake.
+
+The web configuration status area shows the station IP as `STA IP`. The router hostname displayed for the device is:
+
+```text
+ELECHOUSE_RFID
+```
+
+---
+
+## 9. Command-Line Configuration
+
+Command inputs:
+
+| Input | Description |
+|---|---|
+| USB CDC | `115200 8N1`, commonly used for development and testing |
+| Product UART | GPIO44/GPIO43, available in UART interface mode |
+| TCP Server | Remote configuration in normal TCP server mode |
+| ELECHOUSE Broker | After a successful ELECHOUSE Test handshake, commands can be sent from the web page |
+
+### 9.1 Configure WiFi
+
+```text
+wifi <ssid> <password>
+save
+reboot
+```
+
+Example:
+
+```text
+wifi YOU B20150127
+save
+reboot
+```
+
+Check WiFi status:
+
+```text
+wifi status
+```
+
+Successful example:
+
+```text
+wifi ssid=YOU passLen=9 hostname=ELECHOUSE_RFID status=CONNECTED(3) ip=192.168.124.18
+```
+
+### 9.2 Enable ELECHOUSE Test
+
+Runtime test only, without saving:
+
+```text
+elechouse on <session_code>
+```
+
+Example:
+
+```text
+elechouse on EKQWQ4XZ
+```
+
+Equivalent command:
+
+```text
+tcp elechouse <session_code>
+```
+
+Successful handshake example:
+
+```text
+OK elechouse test on
+ELECHOUSE broker OK EKQWQ4XZ
+```
+
+Check status:
+
+```text
+elechouse status
+tcp status
+```
+
+Successful status example:
+
+```text
+elechouse host=www.elechouse.com port=9000 session=EKQWQ4XZ mode=elechouse connected=yes brokerOk=yes
+tcp mode=elechouse host=www.elechouse.com port=9000 listen=9000 echo=on commands=on session=EKQWQ4XZ connected=yes brokerOk=yes
+```
+
+### 9.3 Save for Automatic Connection After Reboot
+
+After confirming the connection works:
+
+```text
+save
+reboot
+```
+
+### 9.4 Update or Clear session_code
+
+Update only the code without immediately switching TCP mode:
+
+```text
+elechouse code <session_code>
+```
+
+Clear the saved code:
+
+```text
+elechouse code clear
+save
+```
+
+Turn off `ELECHOUSE Test`:
+
+```text
+elechouse off
+```
+
+Force reconnect:
+
+```text
+elechouse reconnect
+```
+
+---
+
+## 10. Current Firmware Commands
+
+### 10.1 TCP / ELECHOUSE
+
+```text
+tcp status
+tcp client <host> <port>
+tcp server <port>
+tcp elechouse <session_code>
+tcp off
+tcp echo on|off
+tcp commands on|off
+
+elechouse status
+elechouse code <session_code>
+elechouse code clear
+elechouse on [session_code]
+elechouse off
+elechouse reconnect
+```
+
+### 10.2 WiFi / Configuration Portal
+
+```text
+wifi <ssid> <password>
+wifi status
+wifi scan [ssid]
+wifi reconnect
+wifi off
+
+portal status
+portal on
+portal off
+portal ssid <ssid> [password]
+```
+
+### 10.3 Common Reader Commands
+
+```text
+status
+pins
+test
+format json
+format line
+dedupe <ms>
+window <lf_ms> <hf_ms>
+save
+load
+clear
+reboot
+```
+
+`test` outputs one test card event and triggers the buzzer and success LED feedback. It can be used to verify USB serial, TCP, product interface, and web test paths.
+
+---
+
+## 11. Production Test Flow
+
+1. Open the web test page:
+
+```text
+https://www.elechouse.com/rfid-tcp-broker/
+```
+
+2. Get the `session_code` assigned by the web page.
+3. Enter this command through USB CDC or the configuration page:
+
+```text
+elechouse on <session_code>
+```
+
+4. Wait for this serial log:
+
+```text
+ELECHOUSE broker OK <session_code>
+```
+
+5. Read an HF or LF card. The web page should show data similar to:
+
+```json
+{"type":"card","band":"HF","card_type":"ISO14443A","uid":"1C 2C FB 10","ms":1002132}
+```
+
+6. Send this command from the web command box:
+
+```text
+status
+```
+
+The device should return status text through TCP.
+
+7. To make the device connect automatically after reboot:
+
+```text
+save
+reboot
+```
+
+8. To remove the web session after production testing:
+
+```text
+elechouse code clear
+save
+```
+
+---
+
+## 12. Troubleshooting
+
+### 12.1 Device Stays in Hotspot Mode and Does Not Join the Router
+
+Check WiFi status:
+
+```text
+wifi status
+```
+
+Verify:
+
+- `ssid` is correct.
+- `passLen` matches the real password length.
+- `hostname` is `ELECHOUSE_RFID`.
+- `status` is `CONNECTED(3)`.
+- The router supports 2.4 GHz WiFi.
+
+After correcting WiFi settings:
+
+```text
+wifi <ssid> <password>
+save
+reboot
+```
+
+After the device connects to the router successfully, the configuration hotspot is turned off. If the router connection fails, the `10.10.10.10` configuration portal remains available.
+
+### 12.2 `ERR unknown_or_expired_code`
+
+Typical causes:
+
+- The web test page was refreshed and generated a new code.
+- The session expired.
+- The device is still reconnecting with an old code.
+- The code entered on the device does not match the web page.
+
+Fix:
+
+```text
+elechouse on <new_session_code>
+```
+
+If it should be saved:
+
+```text
+save
+```
+
+### 12.3 `code_already_has_device`
+
+The same `session_code` is already bound to another device. Disconnect the other device, or generate a new code on the web page.
+
+### 12.4 `connected=yes` but `brokerOk=no`
+
+TCP is connected to the Broker, but the HELLO handshake has not succeeded. Check:
+
+- Whether `session` is empty.
+- Whether the `session_code` is expired.
+- Whether the Broker returned `ERR ...`.
+
+### 12.5 No Card Data on the Web Page
+
+Check:
+
+```text
+elechouse status
+tcp status
+```
+
+Required state:
+
+```text
+mode=elechouse
+connected=yes
+brokerOk=yes
+echo=on
+```
+
+The firmware also has duplicate-card suppression. The same card may not upload repeatedly within the `dedupe` time window. Adjust it if needed:
+
+```text
+dedupe <ms>
+save
+```
+
+---
+
+## 13. Firmware Implementation Notes
+
+Current ELECHOUSE Test behavior:
+
+- TCP host and port are fixed to `www.elechouse.com:9000`.
+- The user only enters the web-assigned `session_code`.
+- `session_code` is saved to ESP32 NVS with key `ehCode`.
+- Enabling this mode automatically turns on `TCP events` and `TCP commands`.
+- After TCP connection succeeds, the firmware sends `HELLO <session_code> <device_id>`.
+- After the Broker replies `OK ...`, status shows `brokerOk=yes`.
+- Card events are uploaded as JSON Lines.
+- The firmware sends `PING` every 20 seconds.
+- The firmware replies `PONG` when receiving Broker `PING`.
+- Receiving `ERR ...` closes the socket and retries according to the reconnect interval.
+- Normal text lines sent from the web page are passed to the unified firmware command parser.
+
+---
+
+## 14. Minimal Verification Commands
+
+```text
+wifi status
+elechouse on EKQWQ4XZ
+elechouse status
+tcp status
+test
+```
+
+Expected result:
+
+```text
+wifi ... status=CONNECTED(3) ip=...
+ELECHOUSE broker OK EKQWQ4XZ
+session=EKQWQ4XZ mode=elechouse connected=yes brokerOk=yes
+```
+
+The web page should show a test card event or a real card read event.

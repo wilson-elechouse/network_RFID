@@ -1,0 +1,11 @@
+**/build/
+**/.pio/
+**/.vscode/
+**/.idea/
+*.bin
+*.elf
+*.map
+*.tmp
+*.log
+*.bak
+Thumbs.db
