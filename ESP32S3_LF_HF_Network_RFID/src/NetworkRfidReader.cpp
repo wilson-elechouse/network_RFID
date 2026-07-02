@@ -75,6 +75,7 @@ constexpr uint8_t kT4tSwFileNotFound[] = {0x6A, 0x82};
 constexpr uint8_t kT4tSwConditionsNotSatisfied[] = {0x69, 0x85};
 constexpr uint8_t kT4tSwInsNotSupported[] = {0x6D, 0x00};
 constexpr uint8_t kT4tNdefAid[] = {0xD2, 0x76, 0x00, 0x00, 0x85, 0x01, 0x01};
+constexpr uint16_t kIso14443aCrcInit = 0x6363;
 constexpr uint32_t kHfCardRawIrqs = ST25R3916_IRQ_MASK_FWL |
                                     ST25R3916_IRQ_MASK_TXE |
                                     ST25R3916_IRQ_MASK_RXS |
@@ -91,6 +92,19 @@ constexpr uint32_t kHfCardRawErrorIrqs = ST25R3916_IRQ_MASK_PAR |
                                          ST25R3916_IRQ_MASK_CRC |
                                          ST25R3916_IRQ_MASK_ERR1 |
                                          ST25R3916_IRQ_MASK_ERR2;
+
+uint16_t iso14443aCrc(const uint8_t* data, size_t length) {
+  uint16_t crc = kIso14443aCrcInit;
+  for (size_t i = 0; i < length; i++) {
+    uint8_t byte = data[i] ^ static_cast<uint8_t>(crc & 0xffU);
+    byte ^= static_cast<uint8_t>(byte << 4);
+    crc = static_cast<uint16_t>((crc >> 8) ^
+                                (static_cast<uint16_t>(byte) << 8) ^
+                                (static_cast<uint16_t>(byte) << 3) ^
+                                (byte >> 4));
+  }
+  return crc;
+}
 constexpr uint8_t kT4tCcFile[] = {
   0x00, 0x0F,
   0x20,
@@ -1472,13 +1486,19 @@ bool NetworkRfidReader::handleHfCardIsoDepFrame(const uint8_t* frame, size_t len
 }
 
 bool NetworkRfidReader::sendHfCardIsoDepFrame(const uint8_t* frame, size_t length, bool expectRx) {
-  if (hfReader_ == nullptr || frame == nullptr || length == 0U || length > sizeof(hfCardTxBuf_)) {
+  if (hfReader_ == nullptr || frame == nullptr || length == 0U || length > (sizeof(hfCardTxBuf_) - 2U)) {
     return false;
   }
 
   memcpy(hfCardLastTxBuf_, frame, length);
   hfCardLastTxLen_ = static_cast<uint16_t>(length);
   hfListenRxBits_ = 0;
+
+  memmove(hfCardTxBuf_, frame, length);
+  const uint16_t crc = iso14443aCrc(hfCardTxBuf_, length);
+  hfCardTxBuf_[length] = static_cast<uint8_t>(crc & 0xffU);
+  hfCardTxBuf_[length + 1U] = static_cast<uint8_t>((crc >> 8) & 0xffU);
+  const size_t txLength = length + 2U;
 
   ReturnCode err = hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_CLEAR_FIFO);
   if (err == ERR_NONE) {
@@ -1491,13 +1511,13 @@ bool NetworkRfidReader::sendHfCardIsoDepFrame(const uint8_t* frame, size_t lengt
                                                    ST25R3916_REG_ISO14443A_NFC_nfc_f0_off);
   }
   if (err == ERR_NONE) {
-    hfReader_->st25r3916SetNumTxBits(static_cast<uint16_t>(length * 8U));
+    hfReader_->st25r3916SetNumTxBits(static_cast<uint16_t>(txLength * 8U));
     hfReader_->st25r3916ClearAndEnableInterrupts(kHfCardRawIrqs);
-    err = hfReader_->st25r3916WriteFifo(frame, static_cast<uint16_t>(length));
+    err = hfReader_->st25r3916WriteFifo(hfCardTxBuf_, static_cast<uint16_t>(txLength));
   }
   if (err == ERR_NONE) {
     delayMicroseconds(kHfCardFdtListenUs);
-    err = hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_TRANSMIT_WITH_CRC);
+    err = hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_TRANSMIT_WITHOUT_CRC);
   }
   if (err != ERR_NONE) {
     if (console_ != nullptr) {
