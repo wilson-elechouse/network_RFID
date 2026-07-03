@@ -1471,7 +1471,8 @@ bool NetworkRfidReader::configureHfCardDirectListener(const uint8_t* uid, size_t
     err = hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_STOP);
   }
   if (err == ERR_NONE) {
-    err = hfReader_->st25r3916SetBitrate(RFAL_BR_106, RFAL_BR_106);
+    err = hfReader_->rfalSetAnalogConfig(RFAL_ANALOG_CONFIG_TECH_CHIP |
+                                         RFAL_ANALOG_CONFIG_CHIP_LISTEN_ON);
   }
   if (err == ERR_NONE) {
     hfReader_->st25r3916ClearAndEnableInterrupts(kHfCardDirectIrqs);
@@ -1519,23 +1520,29 @@ void NetworkRfidReader::serviceHfCardDirectState() {
     console_->print(F("HF card direct irq=0x"));
     console_->print(irqs, HEX);
     console_->print(F(" state="));
-    console_->println(hfPtaStateName(status));
+    console_->print(hfPtaStateName(status));
+    console_->print(F(" field="));
+    console_->println(hfReader_->rfalIsExtFieldOn() ? F("on") : F("off"));
   }
 
   if ((irqs & ST25R3916_IRQ_MASK_EOF) != 0U) {
-    hfCardIsoDepActive_ = false;
-    hfCardIsoDepStartMs_ = 0;
-    hfCardLastTxLen_ = 0;
-    hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_STOP);
-    hfReader_->st25r3916ClrRegisterBits(ST25R3916_REG_PASSIVE_TARGET, ST25R3916_REG_PASSIVE_TARGET_d_106_ac_a);
-    hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_GOTO_SENSE);
-    hfLastLmState_ = RFAL_LM_STATE_POWER_OFF;
-    return;
+    if (!hfReader_->rfalIsExtFieldOn()) {
+      hfCardIsoDepActive_ = false;
+      hfCardIsoDepStartMs_ = 0;
+      hfCardLastTxLen_ = 0;
+      hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_STOP);
+      hfReader_->st25r3916ClrRegisterBits(ST25R3916_REG_PASSIVE_TARGET, ST25R3916_REG_PASSIVE_TARGET_d_106_ac_a);
+      hfLastLmState_ = RFAL_LM_STATE_POWER_OFF;
+      return;
+    }
   }
 
   if ((irqs & ST25R3916_IRQ_MASK_EON) != 0U) {
+    hfReader_->st25r3916SetRegisterBits(ST25R3916_REG_OP_CONTROL,
+                                        ST25R3916_REG_OP_CONTROL_en |
+                                          ST25R3916_REG_OP_CONTROL_rx_en);
     hfReader_->st25r3916ClrRegisterBits(ST25R3916_REG_PASSIVE_TARGET, ST25R3916_REG_PASSIVE_TARGET_d_106_ac_a);
-    hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_GOTO_SENSE);
+    hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_CLEAR_FIFO);
     hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_UNMASK_RECEIVE_DATA);
     hfLastLmState_ = RFAL_LM_STATE_IDLE;
   }
