@@ -41,7 +41,7 @@ void setup() {
 
   Serial.println("ESP32S3 LF/HF RFID boot");
   config.pins.hfBusMode = NetworkRfidHfBusMode::I2c;
-  config.hfI2cHz = 100000UL;
+  config.hfI2cHz = 400000UL;
   config.autoStartLf = true;
   config.autoInitHf = true;
   reader.begin(config, Serial, true);

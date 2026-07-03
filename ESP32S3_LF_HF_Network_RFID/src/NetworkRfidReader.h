@@ -63,6 +63,11 @@ enum class NetworkRfidHfCardPayloadType : uint8_t {
   Wifi,
 };
 
+enum class NetworkRfidHfCardType : uint8_t {
+  NfcAType4,
+  NfcAType2,
+};
+
 enum class NetworkRfidProductInterfaceMode : uint8_t {
   Uart,
   Wiegand,
@@ -118,12 +123,13 @@ struct NetworkRfidConfig {
   uint32_t duplicateSuppressMs = 1000;
   uint32_t tcpReconnectMs = 3000;
   uint32_t hfSpiHz = 5000000UL;
-  uint32_t hfI2cHz = 100000UL;
+  uint32_t hfI2cHz = 400000UL;
   uint16_t hfDiscoveryDurationMs = RFAL_ESP32_DEFAULT_DISCOVERY_DURATION_MS;
   uint16_t hfTechs = RFAL_NFC_POLL_TECH_A | RFAL_NFC_POLL_TECH_B |
                      RFAL_NFC_POLL_TECH_F | RFAL_NFC_POLL_TECH_V;
   NetworkRfidHfRole hfRole = NetworkRfidHfRole::Scan;
   String hfCardUid = "02 00 00 01";
+  NetworkRfidHfCardType hfCardType = NetworkRfidHfCardType::NfcAType4;
   NetworkRfidHfCardPayloadType hfCardPayloadType = NetworkRfidHfCardPayloadType::Url;
   String hfCardPayload = "https://www.elechouse.com/";
   String hfCardWifiSsid;
@@ -205,6 +211,7 @@ private:
   static_assert((PulseQueueSize & (PulseQueueSize - 1)) == 0, "PulseQueueSize must be power of two");
   static constexpr size_t DuplicateCacheSize = 8;
   static constexpr size_t HfT4tFileMaxLen = 768;
+  static constexpr size_t HfT2tMemoryMaxLen = 192;
 
   static NetworkRfidReader* activeInstance_;
   static void IRAM_ATTR onLfDataEdgeStatic();
@@ -239,13 +246,17 @@ private:
   void logHfCardDirectState(uint8_t status);
   void resetHfCardProtocol();
   void serviceHfCardIsoDep();
+  void serviceHfCardType2();
   bool handleHfCardListenFrame(const uint8_t* data, size_t length);
   bool handleHfCardIsoDepFrame(const uint8_t* frame, size_t length);
+  bool handleHfCardType2Frame(const uint8_t* frame, size_t length);
   bool sendHfCardIsoDepFrame(const uint8_t* frame, size_t length, bool expectRx);
+  bool sendHfCardType2FrameFast(const uint8_t* frame, size_t length, bool expectRx);
   ReturnCode pollHfCardRawFrame(size_t& rxBytes);
   void restartHfCardEmulation();
   size_t buildHfNdefMessage(uint8_t* out, size_t maxLength) const;
   size_t buildHfNdefFile(uint8_t* out, size_t maxLength) const;
+  size_t buildHfT2tMemory(uint8_t* out, size_t maxLength) const;
   size_t buildHfT4tApduResponse(const uint8_t* apdu, size_t apduLen, uint8_t* out, size_t maxLength);
   bool beginHfDataExchange(rfalNfcDevice* device);
   void serviceHfDataExchange();
@@ -340,6 +351,7 @@ private:
   static const char* slotName(NetworkRfidSlot slot);
   static const char* hfBusModeName(NetworkRfidHfBusMode mode);
   static const char* hfRoleName(NetworkRfidHfRole role);
+  static const char* hfCardTypeName(NetworkRfidHfCardType type);
   static const char* hfCardPayloadTypeName(NetworkRfidHfCardPayloadType type);
   static const char* productInterfaceModeName(NetworkRfidProductInterfaceMode mode);
   static const char* hfTypeName(rfalNfcDevType type);
@@ -377,6 +389,7 @@ private:
   uint16_t hfListenRxBits_ = 0;
   rfalLmState hfLastLmState_ = RFAL_LM_STATE_NOT_INIT;
   uint8_t hfCardLastPtState_ = 0xFF;
+  bool hfCardDirectRxArmed_ = false;
   bool hfCardIsoDepActive_ = false;
   uint32_t hfCardIsoDepStartMs_ = 0;
   uint8_t hfCardExpectedBlock_ = 0;
@@ -386,6 +399,7 @@ private:
   uint8_t hfCardLastTxBuf_[RFAL_NFC_RF_BUF_LEN] = {};
   uint16_t hfCardLastTxLen_ = 0;
   uint8_t hfCardNdefFile_[HfT4tFileMaxLen] = {};
+  uint8_t hfCardT2tMemory_[HfT2tMemoryMaxLen] = {};
   uint8_t hfP2pTxBuf_[RFAL_NFC_RF_BUF_LEN] = {};
   bool hfDataExchangeActive_ = false;
   uint8_t* hfExchangeRxData_ = nullptr;

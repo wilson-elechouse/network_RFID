@@ -526,6 +526,7 @@ bool NetworkRfidReader::saveConfig() {
   prefs_.putUInt("hfTechs", config_.hfTechs);
   prefs_.putUChar("hfRole", static_cast<uint8_t>(config_.hfRole));
   prefs_.putString("hfCardUid", config_.hfCardUid);
+  prefs_.putUChar("hfCardTyp", static_cast<uint8_t>(config_.hfCardType));
   prefs_.putUChar("hfNdefTyp", static_cast<uint8_t>(config_.hfCardPayloadType));
   prefs_.putString("hfNdef", config_.hfCardPayload);
   prefs_.putString("hfNdefSsid", config_.hfCardWifiSsid);
@@ -615,6 +616,12 @@ bool NetworkRfidReader::loadConfig() {
     config_.hfTechs &= ~RFAL_NFC_POLL_TECH_AP2P;
   }
   config_.hfCardUid = prefs_.getString("hfCardUid", config_.hfCardUid);
+  config_.hfCardType = static_cast<NetworkRfidHfCardType>(
+      prefs_.getUChar("hfCardTyp", static_cast<uint8_t>(config_.hfCardType)));
+  if (config_.hfCardType != NetworkRfidHfCardType::NfcAType4 &&
+      config_.hfCardType != NetworkRfidHfCardType::NfcAType2) {
+    config_.hfCardType = NetworkRfidHfCardType::NfcAType4;
+  }
   config_.hfCardPayloadType = static_cast<NetworkRfidHfCardPayloadType>(
       prefs_.getUChar("hfNdefTyp", static_cast<uint8_t>(config_.hfCardPayloadType)));
   if (config_.hfCardPayloadType != NetworkRfidHfCardPayloadType::Url &&
@@ -1300,16 +1307,31 @@ bool NetworkRfidReader::startHfCardEmulation() {
 
   resetHfCardProtocol();
   memset(&hfCardEmuA_, 0, sizeof(hfCardEmuA_));
+  const bool type2 = config_.hfCardType == NetworkRfidHfCardType::NfcAType2;
+  if (type2 && config_.pins.hfBusMode == NetworkRfidHfBusMode::I2c &&
+      i2c_ != nullptr && config_.hfI2cHz < 400000UL) {
+    config_.hfI2cHz = 400000UL;
+    i2c_->setClock(config_.hfI2cHz);
+  }
+  const uint8_t atqa0 = (type2 && uid_len == 7U) ? 0x44U : 0x04U;
+  const uint8_t finalSak = type2 ? 0x00U : 0x20U;
   hfCardEmuA_.nfcidLen = uid_len == 4 ? RFAL_LM_NFCID_LEN_04 :
                          RFAL_LM_NFCID_LEN_07;
   memcpy(hfCardEmuA_.nfcid, uid, uid_len);
-  hfCardEmuA_.SENS_RES[0] = 0x04;
+  hfCardEmuA_.SENS_RES[0] = atqa0;
   hfCardEmuA_.SENS_RES[1] = 0x00;
-  hfCardEmuA_.SEL_RES = 0x20;
+  hfCardEmuA_.SEL_RES = finalSak;
   hfListenRxBits_ = 0;
   memset(hfListenRxBuf_, 0, sizeof(hfListenRxBuf_));
+  if (type2 && buildHfT2tMemory(hfCardT2tMemory_, sizeof(hfCardT2tMemory_)) == 0U) {
+    if (console_ != nullptr) {
+      console_->println(F("ERR hf Type 2 memory build failed"));
+    }
+    return false;
+  }
   hfLastLmState_ = RFAL_LM_STATE_NOT_INIT;
   hfCardLastPtState_ = 0xFF;
+  hfCardDirectRxArmed_ = false;
 
   if (nfc_ != nullptr && nfc_->rfalNfcGetState() > RFAL_NFC_STATE_IDLE) {
     nfc_->rfalNfcDeactivate(false);
@@ -1325,7 +1347,9 @@ bool NetworkRfidReader::startHfCardEmulation() {
   hfCardEmulationActive_ = true;
   if (console_ != nullptr) {
     console_->print(F("HF card direct emulation active uid="));
-    console_->println(hexBytes(hfCardEmuA_.nfcid, uid_len, true));
+    console_->print(hexBytes(hfCardEmuA_.nfcid, uid_len, true));
+    console_->print(F(" type="));
+    console_->println(hfCardTypeName(config_.hfCardType));
   }
   return true;
 }
@@ -1366,6 +1390,11 @@ void NetworkRfidReader::serviceHfCardEmulation() {
     return;
   }
 
+  if (config_.hfCardType == NetworkRfidHfCardType::NfcAType2) {
+    serviceHfCardType2();
+    return;
+  }
+
   size_t rx_bytes = 0;
   const ReturnCode ret = pollHfCardRawFrame(rx_bytes);
   if (ret == ERR_BUSY) {
@@ -1397,11 +1426,14 @@ bool NetworkRfidReader::configureHfCardDirectListener(const uint8_t* uid, size_t
 
   uint8_t ptMem[ST25R3916_PTM_A_LEN] = {};
   memcpy(ptMem, uid, uidLen);
-  ptMem[10] = 0x04;
+  const bool type2 = config_.hfCardType == NetworkRfidHfCardType::NfcAType2;
+  const uint8_t atqa0 = (type2 && uidLen == 7U) ? 0x44U : 0x04U;
+  const uint8_t finalSak = type2 ? 0x00U : 0x20U;
+  ptMem[10] = atqa0;
   ptMem[11] = 0x00;
-  ptMem[12] = (uidLen == 4U) ? 0x20 : 0x24;
-  ptMem[13] = 0x20;
-  ptMem[14] = 0x20;
+  ptMem[12] = (uidLen == 4U) ? finalSak : static_cast<uint8_t>(finalSak | 0x04U);
+  ptMem[13] = finalSak;
+  ptMem[14] = finalSak;
 
   ReturnCode err = hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_STOP);
   if (err == ERR_NONE) {
@@ -1532,6 +1564,7 @@ void NetworkRfidReader::serviceHfCardDirectState() {
       hfCardIsoDepActive_ = false;
       hfCardIsoDepStartMs_ = 0;
       hfCardLastTxLen_ = 0;
+      hfCardDirectRxArmed_ = false;
       hfReader_->st25r3916ChangeRegisterBits(ST25R3916_REG_OP_CONTROL,
                                              ST25R3916_REG_OP_CONTROL_en |
                                                ST25R3916_REG_OP_CONTROL_rx_en |
@@ -1560,6 +1593,7 @@ void NetworkRfidReader::serviceHfCardDirectState() {
     hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_GOTO_SENSE);
     hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_CLEAR_FIFO);
     hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_UNMASK_RECEIVE_DATA);
+    hfCardDirectRxArmed_ = false;
     hfLastLmState_ = RFAL_LM_STATE_IDLE;
   }
 
@@ -1576,12 +1610,21 @@ void NetworkRfidReader::serviceHfCardDirectState() {
     enableHfCardDirectRx();
     hfLastLmState_ = ((irqs & ST25R3916_IRQ_MASK_WU_A_X) != 0U) ? RFAL_LM_STATE_ACTIVE_Ax : RFAL_LM_STATE_ACTIVE_A;
   }
+
+  if ((hfLastLmState_ == RFAL_LM_STATE_ACTIVE_A || hfLastLmState_ == RFAL_LM_STATE_ACTIVE_Ax) &&
+      !hfCardDirectRxArmed_) {
+    hfReader_->st25r3916SetBitrate(RFAL_BR_106, RFAL_BR_106);
+    hfReader_->st25r3916SetRegisterBits(ST25R3916_REG_PASSIVE_TARGET, ST25R3916_REG_PASSIVE_TARGET_d_106_ac_a);
+    hfReader_->st25r3916GetInterrupt(kHfCardRawErrorIrqs | ST25R3916_IRQ_MASK_RXE);
+    enableHfCardDirectRx();
+  }
 }
 
 void NetworkRfidReader::enableHfCardDirectRx() {
   if (hfReader_ == nullptr) {
     return;
   }
+  hfCardDirectRxArmed_ = true;
   hfReader_->st25r3916EnableInterrupts(kHfCardDirectIrqs);
   hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_UNMASK_RECEIVE_DATA);
 }
@@ -1614,6 +1657,7 @@ void NetworkRfidReader::resetHfCardProtocol() {
   hfLastLmState_ = RFAL_LM_STATE_NOT_INIT;
   hfCardLastPtState_ = 0xFF;
   hfListenRxBits_ = 0;
+  hfCardDirectRxArmed_ = false;
   hfCardIsoDepActive_ = false;
   hfCardIsoDepStartMs_ = 0;
   hfCardExpectedBlock_ = 0;
@@ -1700,6 +1744,39 @@ void NetworkRfidReader::serviceHfCardIsoDep() {
   }
 }
 
+void NetworkRfidReader::serviceHfCardType2() {
+  size_t rx_bytes = 0;
+  const ReturnCode ret = pollHfCardRawFrame(rx_bytes);
+  if (ret == ERR_BUSY) {
+    return;
+  }
+
+  if (ret != ERR_NONE) {
+    if (ret == ERR_INCOMPLETE_BYTE || ret == ERR_CRC || ret == ERR_PAR || ret == ERR_FRAMING) {
+      if (console_ != nullptr) {
+        console_->print(F("HF card Type 2 RX discarded: "));
+        console_->println(static_cast<int>(ret));
+      }
+      enableHfCardDirectRx();
+      return;
+    }
+    if (console_ != nullptr && ret != ERR_TIMEOUT) {
+      console_->print(F("HF card Type 2 RX stopped: "));
+      console_->println(static_cast<int>(ret));
+    }
+    enableHfCardDirectRx();
+    return;
+  }
+
+  if (!handleHfCardType2Frame(hfListenRxBuf_, rx_bytes)) {
+    if (console_ != nullptr) {
+      console_->print(F("HF card Type 2 unsupported RX="));
+      console_->println(hexBytes(hfListenRxBuf_, rx_bytes, true));
+    }
+    restartHfCardEmulation();
+  }
+}
+
 bool NetworkRfidReader::handleHfCardIsoDepFrame(const uint8_t* frame, size_t length) {
   if (frame == nullptr || length == 0U) {
     return false;
@@ -1768,6 +1845,67 @@ bool NetworkRfidReader::handleHfCardIsoDepFrame(const uint8_t* frame, size_t len
   return sendHfCardIsoDepFrame(hfCardTxBuf_, respLen + 1U, true);
 }
 
+bool NetworkRfidReader::handleHfCardType2Frame(const uint8_t* frame, size_t length) {
+  if (frame == nullptr || length == 0U) {
+    return false;
+  }
+
+  const uint8_t cmd = frame[0];
+  if (cmd == 0x30U && length >= 2U) {
+    const size_t offset = static_cast<size_t>(frame[1]) * 4U;
+    uint8_t response[16] = {};
+    for (size_t i = 0; i < sizeof(response); ++i) {
+      const size_t pos = offset + i;
+      response[i] = (pos < sizeof(hfCardT2tMemory_)) ? hfCardT2tMemory_[pos] : 0x00U;
+    }
+    return sendHfCardType2FrameFast(response, sizeof(response), true);
+  }
+
+  if (cmd == 0x3AU && length >= 3U) {
+    const uint8_t startPage = frame[1];
+    const uint8_t endPage = frame[2];
+    if (endPage < startPage) {
+      return false;
+    }
+
+    size_t responseLen = (static_cast<size_t>(endPage) - startPage + 1U) * 4U;
+    const size_t maxResponseLen = (sizeof(hfCardTxBuf_) - 2U) & ~0x03U;
+    if (responseLen > maxResponseLen) {
+      responseLen = maxResponseLen;
+    }
+    if (responseLen == 0U) {
+      return false;
+    }
+
+    const size_t offset = static_cast<size_t>(startPage) * 4U;
+    for (size_t i = 0; i < responseLen; ++i) {
+      const size_t pos = offset + i;
+      hfCardTxBuf_[i] = (pos < sizeof(hfCardT2tMemory_)) ? hfCardT2tMemory_[pos] : 0x00U;
+    }
+    return sendHfCardType2FrameFast(hfCardTxBuf_, responseLen, true);
+  }
+
+  if (cmd == 0x60U) {
+    const uint8_t version[] = {
+      0x00, 0x04, 0x04, 0x02,
+      0x01, 0x00, 0x0F, 0x03,
+    };
+    return sendHfCardType2FrameFast(version, sizeof(version), true);
+  }
+
+  if (cmd == 0x1AU) {
+    restartHfCardEmulation();
+    return true;
+  }
+
+  if (cmd == 0x50U && length >= 2U) {
+    restartHfCardEmulation();
+    return true;
+  }
+
+  return false;
+}
+
 bool NetworkRfidReader::sendHfCardIsoDepFrame(const uint8_t* frame, size_t length, bool expectRx) {
   if (hfReader_ == nullptr || frame == nullptr || length == 0U || length > (sizeof(hfCardTxBuf_) - 2U)) {
     return false;
@@ -1834,6 +1972,44 @@ bool NetworkRfidReader::sendHfCardIsoDepFrame(const uint8_t* frame, size_t lengt
     hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_UNMASK_RECEIVE_DATA);
   }
   hfCardIsoDepStartMs_ = expectRx ? millis() : 0U;
+  return true;
+}
+
+bool NetworkRfidReader::sendHfCardType2FrameFast(const uint8_t* frame, size_t length, bool expectRx) {
+  if (hfReader_ == nullptr || frame == nullptr || length == 0U || length > (sizeof(hfCardTxBuf_) - 2U)) {
+    return false;
+  }
+
+  memmove(hfCardTxBuf_, frame, length);
+  const uint16_t crc = iso14443aCrc(hfCardTxBuf_, length);
+  hfCardTxBuf_[length] = static_cast<uint8_t>(crc & 0xffU);
+  hfCardTxBuf_[length + 1U] = static_cast<uint8_t>((crc >> 8) & 0xffU);
+  const size_t txLength = length + 2U;
+  hfListenRxBits_ = 0;
+
+  ReturnCode err = hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_CLEAR_FIFO);
+  if (err == ERR_NONE) {
+    hfReader_->st25r3916SetNumTxBits(static_cast<uint16_t>(txLength * 8U));
+    err = hfReader_->st25r3916WriteFifo(hfCardTxBuf_, static_cast<uint16_t>(txLength));
+  }
+  if (err == ERR_NONE) {
+    err = hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_TRANSMIT_WITHOUT_CRC);
+  }
+  if (err != ERR_NONE) {
+    return false;
+  }
+
+  const uint32_t tx_irqs = hfReader_->st25r3916WaitForInterruptsTimed(ST25R3916_IRQ_MASK_TXE |
+                                                                        kHfCardRawErrorIrqs |
+                                                                        ST25R3916_IRQ_MASK_EOF,
+                                                                      kHfCardRawTxTimeoutMs);
+  if ((tx_irqs & (kHfCardRawErrorIrqs | ST25R3916_IRQ_MASK_TXE)) != ST25R3916_IRQ_MASK_TXE) {
+    return false;
+  }
+
+  if (expectRx) {
+    enableHfCardDirectRx();
+  }
   return true;
 }
 
@@ -1980,6 +2156,77 @@ size_t NetworkRfidReader::buildHfNdefFile(uint8_t* out, size_t maxLength) const 
   out[0] = static_cast<uint8_t>((ndefLen >> 8) & 0xFFU);
   out[1] = static_cast<uint8_t>(ndefLen & 0xFFU);
   return ndefLen + 2U;
+}
+
+size_t NetworkRfidReader::buildHfT2tMemory(uint8_t* out, size_t maxLength) const {
+  if (out == nullptr || maxLength < 20U || (maxLength % 4U) != 0U) {
+    return 0;
+  }
+
+  uint8_t uid[RFAL_NFCID1_TRIPLE_LEN] = {};
+  size_t uidLen = 0;
+  if (!parseHexBytes(config_.hfCardUid, uid, sizeof(uid), uidLen) ||
+      (uidLen != 4U && uidLen != 7U)) {
+    return 0;
+  }
+
+  memset(out, 0, maxLength);
+  if (uidLen == 7U) {
+    out[0] = uid[0];
+    out[1] = uid[1];
+    out[2] = uid[2];
+    out[3] = static_cast<uint8_t>(0x88U ^ uid[0] ^ uid[1] ^ uid[2]);
+    out[4] = uid[3];
+    out[5] = uid[4];
+    out[6] = uid[5];
+    out[7] = uid[6];
+    out[8] = static_cast<uint8_t>(uid[3] ^ uid[4] ^ uid[5] ^ uid[6]);
+  } else {
+    out[0] = uid[0];
+    out[1] = uid[1];
+    out[2] = uid[2];
+    out[3] = static_cast<uint8_t>(uid[0] ^ uid[1] ^ uid[2] ^ uid[3]);
+    out[4] = uid[3];
+    out[8] = uid[3];
+  }
+  out[9] = 0x48;
+  out[10] = 0x00;
+  out[11] = 0x00;
+
+  const size_t dataAreaLen = maxLength - 16U;
+  const size_t ccSize = dataAreaLen / 8U;
+  out[12] = 0xE1;
+  out[13] = 0x10;
+  out[14] = static_cast<uint8_t>(ccSize > 0xFFU ? 0xFFU : ccSize);
+  out[15] = 0x00;
+
+  uint8_t ndef[HfT2tMemoryMaxLen] = {};
+  const size_t ndefLen = buildHfNdefMessage(ndef, sizeof(ndef));
+  if (ndefLen == 0U || ndefLen > 0xFFFEU) {
+    return 0;
+  }
+
+  size_t pos = 16U;
+  if (ndefLen <= 0xFEU) {
+    if ((pos + 2U + ndefLen + 1U) > maxLength) {
+      return 0;
+    }
+    out[pos++] = 0x03;
+    out[pos++] = static_cast<uint8_t>(ndefLen);
+  } else {
+    if ((pos + 4U + ndefLen + 1U) > maxLength) {
+      return 0;
+    }
+    out[pos++] = 0x03;
+    out[pos++] = 0xFF;
+    out[pos++] = static_cast<uint8_t>((ndefLen >> 8) & 0xFFU);
+    out[pos++] = static_cast<uint8_t>(ndefLen & 0xFFU);
+  }
+
+  memcpy(&out[pos], ndef, ndefLen);
+  pos += ndefLen;
+  out[pos] = 0xFE;
+  return maxLength;
 }
 
 size_t NetworkRfidReader::buildHfT4tApduResponse(const uint8_t* apdu, size_t apduLen, uint8_t* out, size_t maxLength) {
@@ -2781,7 +3028,9 @@ void NetworkRfidReader::handleHfCommand(String rest) {
     console_->print(F(" cardEmu="));
     console_->print(hfCardEmulationActive_ ? F("yes") : F("no"));
     console_->print(F(" p2p=disabled"));
-    console_->print(F(" cardType=nfc-a-t4t ndef="));
+    console_->print(F(" cardType="));
+    console_->print(hfCardTypeName(config_.hfCardType));
+    console_->print(F(" ndef="));
     console_->print(hfCardPayloadTypeName(config_.hfCardPayloadType));
     console_->print(F(" spiHz="));
     console_->print(config_.hfSpiHz);
@@ -2867,6 +3116,7 @@ void NetworkRfidReader::handleHfCommand(String rest) {
   if (sub == "card" || sub == "emu" || sub == "cardemu") {
     String action = lowerCopy(nextToken(rest));
     String assigned_uid;
+    String assigned_type;
     if (action.startsWith("uid=")) {
       assigned_uid = action.substring(4);
       rest.trim();
@@ -2875,6 +3125,9 @@ void NetworkRfidReader::handleHfCommand(String rest) {
         assigned_uid += rest;
       }
       action = "uid";
+    } else if (action.startsWith("type=")) {
+      assigned_type = action.substring(5);
+      action = "type";
     }
     if (action.length() == 0 || action == "status") {
       console_->print(F("hf card role="));
@@ -2887,7 +3140,9 @@ void NetworkRfidReader::handleHfCommand(String rest) {
       console_->print(hfCardEmulationActive_ ? F("yes") : F("no"));
       console_->print(F(" state="));
       console_->print(hfLmStateName(hfLastLmState_));
-      console_->print(F(" type=nfc-a-t4t ndef="));
+      console_->print(F(" type="));
+      console_->print(hfCardTypeName(config_.hfCardType));
+      console_->print(F(" ndef="));
       console_->print(hfCardPayloadTypeName(config_.hfCardPayloadType));
       if (config_.hfCardPayloadType == NetworkRfidHfCardPayloadType::Wifi) {
         console_->print(F(" ssid=\""));
@@ -2915,6 +3170,10 @@ void NetworkRfidReader::handleHfCommand(String rest) {
       config_.autoInitHf = true;
       if (!hfReady_) {
         hfReady_ = setupHf();
+      }
+      if (hfCardEmulationActive_) {
+        stopHfCardEmulation();
+        lastHfCardEmuAttemptMs_ = 0;
       }
       restartHfRole();
       console_->println(hfCardEmulationActive_ ? F("OK hf card emulation on") : F("ERR hf card emulation unavailable"));
@@ -2956,11 +3215,38 @@ void NetworkRfidReader::handleHfCommand(String rest) {
       if (!hfReady_) {
         hfReady_ = setupHf();
       }
+      if (hfCardEmulationActive_) {
+        stopHfCardEmulation();
+        lastHfCardEmuAttemptMs_ = 0;
+      }
       restartHfRole();
       console_->print(F("OK hf card uid="));
       console_->print(config_.hfCardUid);
       console_->print(F(" active="));
       console_->println(hfCardEmulationActive_ ? F("yes") : F("no"));
+      return;
+    }
+    if (action == "type") {
+      String type = assigned_type.length() > 0 ? assigned_type : lowerCopy(nextToken(rest));
+      type.trim();
+      if (type == "nfc-a-t4t" || type == "t4t" || type == "type4" || type == "type-4" || type == "4") {
+        config_.hfCardType = NetworkRfidHfCardType::NfcAType4;
+      } else if (type == "nfc-a-t2t" || type == "t2t" || type == "type2" || type == "type-2" ||
+                 type == "2" || type == "ntag" || type == "ultralight") {
+        config_.hfCardType = NetworkRfidHfCardType::NfcAType2;
+      } else {
+        console_->println(F("ERR hf card type nfc-a-t4t|nfc-a-t2t"));
+        return;
+      }
+      if (hfCardEmulationActive_) {
+        stopHfCardEmulation();
+        lastHfCardEmuAttemptMs_ = 0;
+      }
+      if (config_.hfRole == NetworkRfidHfRole::CardEmulation) {
+        restartHfRole();
+      }
+      console_->print(F("OK hf card type="));
+      console_->println(hfCardTypeName(config_.hfCardType));
       return;
     }
     if (action == "ndef" || action == "payload") {
@@ -2992,7 +3278,7 @@ void NetworkRfidReader::handleHfCommand(String rest) {
       console_->println(hfCardPayloadTypeName(config_.hfCardPayloadType));
       return;
     }
-    console_->println(F("ERR hf card on [uid]|off|uid <hex>|uid=<hex>|ndef url|text|vcard|wifi <payload>|status"));
+    console_->println(F("ERR hf card on [uid]|off|uid <hex>|uid=<hex>|type nfc-a-t4t|nfc-a-t2t|ndef url|text|vcard|wifi <payload>|status"));
     return;
   }
 
@@ -4198,11 +4484,18 @@ void NetworkRfidReader::handlePortalSave() {
       uint8_t uid[RFAL_NFCID1_TRIPLE_LEN] = {};
       size_t uid_len = 0;
       if (!parseHexBytes(hf_card_uid, uid, sizeof(uid), uid_len) ||
-          (uid_len != 4 && uid_len != 7 && uid_len != 10)) {
-        sendPortalPage("HF card UID must be 4, 7, or 10 hex bytes.");
+          (uid_len != 4 && uid_len != 7)) {
+        sendPortalPage("HF card UID must be 4 or 7 hex bytes.");
         return;
       }
       config_.hfCardUid = hexBytes(uid, uid_len, true);
+    }
+
+    const String card_type = lowerCopy(portalServer_->arg("hf_card_type"));
+    if (card_type == "nfc-a-t2t") {
+      config_.hfCardType = NetworkRfidHfCardType::NfcAType2;
+    } else {
+      config_.hfCardType = NetworkRfidHfCardType::NfcAType4;
     }
 
     const String ndef_type = lowerCopy(portalServer_->arg("hf_ndef_type"));
@@ -4342,6 +4635,8 @@ void NetworkRfidReader::sendPortalPage(const String& message) {
   const bool iface_aba = config_.productInterfaceMode == NetworkRfidProductInterfaceMode::Aba;
   const bool hf_role_scan = config_.hfRole == NetworkRfidHfRole::Scan;
   const bool hf_role_card = config_.hfRole == NetworkRfidHfRole::CardEmulation;
+  const bool hf_card_t4t = config_.hfCardType == NetworkRfidHfCardType::NfcAType4;
+  const bool hf_card_t2t = config_.hfCardType == NetworkRfidHfCardType::NfcAType2;
   const bool ndef_url = config_.hfCardPayloadType == NetworkRfidHfCardPayloadType::Url;
   const bool ndef_text = config_.hfCardPayloadType == NetworkRfidHfCardPayloadType::Text;
   const bool ndef_vcard = config_.hfCardPayloadType == NetworkRfidHfCardPayloadType::Vcard;
@@ -4487,10 +4782,17 @@ void NetworkRfidReader::sendPortalPage(const String& message) {
   page += F(", IRQ GPIO");
   page += String(config_.pins.hfIrq);
   page += F("</div>");
+  page += F("<div class='row' data-hfrole='card'><label>Card type</label><select name='hf_card_type'><option value='nfc-a-t4t'");
+  page += hf_card_t4t ? F(" selected") : F("");
+  page += F(">NFC-A Type 4 Tag</option><option value='nfc-a-t2t'");
+  page += hf_card_t2t ? F(" selected") : F("");
+  page += F(">NFC-A Type 2 Tag</option></select></div>");
   page += F("<div class='row' data-hfrole='card'><label>Card UID</label><input name='hf_card_uid' value='");
   page += htmlEscape(config_.hfCardUid);
   page += F("'></div>");
-  page += F("<div class='kv' data-hfrole='card'><div>Simulated card</div><div>NFC-A Type 4 Tag / NDEF</div></div>");
+  page += F("<div class='kv' data-hfrole='card'><div>Simulated card</div><div>");
+  page += hfCardTypeName(config_.hfCardType);
+  page += F(" / NDEF</div></div>");
   page += F("<div class='row' data-hfrole='card'><label>NDEF type</label><select name='hf_ndef_type'><option value='url'");
   page += ndef_url ? F(" selected") : F("");
   page += F(">URL</option><option value='text'");
@@ -4511,7 +4813,7 @@ void NetworkRfidReader::sendPortalPage(const String& message) {
   page += F("'></div><div class='row' data-hfrole='card' data-ndef='wifi'><label>WiFi password</label><input name='hf_ndef_wifi_password' type='password' maxlength='64' value='");
   page += htmlEscape(config_.hfCardWifiPassword);
   page += F("'></div>");
-  page += F("<div class='note' data-hfrole='card'>Card emulation uses NFC-A Type 4 Tag / NDEF. UID supports 4 or 7 hex bytes on ST25R3916.</div>");
+  page += F("<div class='note' data-hfrole='card'>Type 4 is best for phones. Type 2 is useful for PN532 and common NFC readers. UID supports 4 or 7 hex bytes; Type 2 is most compatible with 7 bytes.</div>");
   page += F("<div class='checks' data-hfrole='scan'>");
   page += F("<label><input type='checkbox' name='hf_tech_a'");
   page += (config_.hfTechs & RFAL_NFC_POLL_TECH_A) ? F(" checked") : F("");
@@ -5460,7 +5762,7 @@ void NetworkRfidReader::printHelp() {
   console_->println(F("  lf raw <count> | lf hid [ms] | lf indala [samples]"));
   console_->println(F("  hf probe | hf speed <hz> | hf init | hf off | hf status"));
   console_->println(F("  hf mode scan|card | hf tech a|b|f|v on|off"));
-  console_->println(F("  hf card on [uid]|off|uid <hex>|uid=<hex>|ndef url|text|vcard|wifi <payload>|status"));
+  console_->println(F("  hf card on [uid]|off|uid <hex>|uid=<hex>|type nfc-a-t4t|nfc-a-t2t|ndef url|text|vcard|wifi <payload>|status"));
   console_->println(F("  format json|line"));
   console_->println(F("  window <lf_ms> <hf_ms>"));
   console_->println(F("  dedupe <ms>"));
@@ -5804,6 +6106,16 @@ const char* NetworkRfidReader::hfRoleName(NetworkRfidHfRole role) {
     case NetworkRfidHfRole::Scan:
     default:
       return "scan";
+  }
+}
+
+const char* NetworkRfidReader::hfCardTypeName(NetworkRfidHfCardType type) {
+  switch (type) {
+    case NetworkRfidHfCardType::NfcAType2:
+      return "nfc-a-t2t";
+    case NetworkRfidHfCardType::NfcAType4:
+    default:
+      return "nfc-a-t4t";
   }
 }
 
