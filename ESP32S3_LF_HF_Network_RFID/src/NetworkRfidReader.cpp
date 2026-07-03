@@ -1512,7 +1512,9 @@ void NetworkRfidReader::serviceHfCardDirectState() {
     return;
   }
 
-  const bool timeCritical = (irqs & (ST25R3916_IRQ_MASK_NFCT |
+  const bool fieldOn = hfReader_->rfalIsExtFieldOn();
+  const bool timeCritical = (irqs & (ST25R3916_IRQ_MASK_EON |
+                                      ST25R3916_IRQ_MASK_NFCT |
                                       ST25R3916_IRQ_MASK_RXE_PTA |
                                       ST25R3916_IRQ_MASK_WU_A |
                                       ST25R3916_IRQ_MASK_WU_A_X)) != 0U;
@@ -1522,26 +1524,40 @@ void NetworkRfidReader::serviceHfCardDirectState() {
     console_->print(F(" state="));
     console_->print(hfPtaStateName(status));
     console_->print(F(" field="));
-    console_->println(hfReader_->rfalIsExtFieldOn() ? F("on") : F("off"));
+    console_->println(fieldOn ? F("on") : F("off"));
   }
 
   if ((irqs & ST25R3916_IRQ_MASK_EOF) != 0U) {
-    if (!hfReader_->rfalIsExtFieldOn()) {
+    if (!fieldOn) {
       hfCardIsoDepActive_ = false;
       hfCardIsoDepStartMs_ = 0;
       hfCardLastTxLen_ = 0;
+      hfReader_->st25r3916ChangeRegisterBits(ST25R3916_REG_OP_CONTROL,
+                                             ST25R3916_REG_OP_CONTROL_en |
+                                               ST25R3916_REG_OP_CONTROL_rx_en |
+                                               ST25R3916_REG_OP_CONTROL_en_fd_mask,
+                                             ST25R3916_REG_OP_CONTROL_en |
+                                               ST25R3916_REG_OP_CONTROL_rx_en |
+                                               ST25R3916_REG_OP_CONTROL_en_fd_auto_efd);
       hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_STOP);
       hfReader_->st25r3916ClrRegisterBits(ST25R3916_REG_PASSIVE_TARGET, ST25R3916_REG_PASSIVE_TARGET_d_106_ac_a);
+      hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_GOTO_SENSE);
+      hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_UNMASK_RECEIVE_DATA);
       hfLastLmState_ = RFAL_LM_STATE_POWER_OFF;
       return;
     }
   }
 
   if ((irqs & ST25R3916_IRQ_MASK_EON) != 0U) {
-    hfReader_->st25r3916SetRegisterBits(ST25R3916_REG_OP_CONTROL,
-                                        ST25R3916_REG_OP_CONTROL_en |
-                                          ST25R3916_REG_OP_CONTROL_rx_en);
+    hfReader_->st25r3916ChangeRegisterBits(ST25R3916_REG_OP_CONTROL,
+                                           ST25R3916_REG_OP_CONTROL_en |
+                                             ST25R3916_REG_OP_CONTROL_rx_en |
+                                             ST25R3916_REG_OP_CONTROL_en_fd_mask,
+                                           ST25R3916_REG_OP_CONTROL_en |
+                                             ST25R3916_REG_OP_CONTROL_rx_en |
+                                             ST25R3916_REG_OP_CONTROL_en_fd_auto_efd);
     hfReader_->st25r3916ClrRegisterBits(ST25R3916_REG_PASSIVE_TARGET, ST25R3916_REG_PASSIVE_TARGET_d_106_ac_a);
+    hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_GOTO_SENSE);
     hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_CLEAR_FIFO);
     hfReader_->st25r3916ExecuteCommand(ST25R3916_CMD_UNMASK_RECEIVE_DATA);
     hfLastLmState_ = RFAL_LM_STATE_IDLE;
