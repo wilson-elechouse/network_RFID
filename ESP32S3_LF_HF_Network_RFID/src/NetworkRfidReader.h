@@ -265,7 +265,6 @@ private:
   void handleSerial();
   void handleSerialStream(Stream& stream, String& line);
   void handleCommand(String line);
-  void handlePinCommand(String rest);
   void handleTcpCommand(String rest);
   void handleElechouseCommand(String rest);
   void handleWifiCommand(String rest);
@@ -275,7 +274,6 @@ private:
   void handleHfCommand(String rest);
   void handlePortalCommand(String rest);
   void handleLfIndalaCommand(String rest);
-  void handleUartCommand(String rest);
   void handleInterfaceCommand(String rest);
   void handleFeedbackCommand(String rest);
   void handleButtonCommand(String rest);

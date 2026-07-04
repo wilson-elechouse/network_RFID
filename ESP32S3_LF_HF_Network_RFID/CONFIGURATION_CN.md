@@ -145,7 +145,7 @@ HF I2C 默认引脚：
 | TCP reconnect ms | TCP/WiFi 重连间隔 |
 | LF enabled | 开机自动启用 LF |
 | HF enabled | 开机自动初始化 HF |
-| Serial echo | 是否通过 USB CDC 输出读卡事件 |
+| USB CDC events | 是否通过 USB CDC 输出读卡事件 |
 
 `Feedback and Button`：
 
@@ -216,7 +216,7 @@ TCP server 示例：
 ```text
 tcp server 9000
 tcp commands on
-tcp echo on
+tcp events on
 save
 reboot
 ```
@@ -228,7 +228,7 @@ TCP client 示例：
 ```text
 tcp client 192.168.1.20 9000
 tcp commands on
-tcp echo on
+tcp events on
 save
 reboot
 ```
@@ -264,11 +264,11 @@ test
 ### 5.3 WiFi 和网页命令
 
 ```text
-wifi <ssid> <password>
+wifi set <ssid> <password>
 wifi status
 wifi scan [ssid]
 wifi reconnect
-wifi off
+wifi clear
 portal status
 portal on
 portal off
@@ -278,7 +278,7 @@ portal ssid <ssid> [password]
 示例：
 
 ```text
-wifi MyWifi MyPassword
+wifi set MyWifi MyPassword
 save
 reboot
 ```
@@ -289,28 +289,25 @@ reboot
 tcp status
 tcp client <host> <port>
 tcp server <port>
-tcp elechouse <session_code>
+elechouse on <session_code>
 tcp off
-tcp echo on|off
+tcp events on|off
 tcp commands on|off
 
 elechouse status
-elechouse code <session_code>
-elechouse code clear
-elechouse on [session_code]
+elechouse on <session_code>
 elechouse off
 elechouse reconnect
+elechouse clear
 ```
 
 | 命令 | 说明 |
 |---|---|
 | `tcp client <host> <port>` | 设备主动连接服务器 |
 | `tcp server <port>` | 设备监听指定端口 |
-| `tcp elechouse <session_code>` | 进入 ELECHOUSE 在线测试模式，固定连接 `www.elechouse.com:9000` |
-| `elechouse on [session_code]` | 启用 ELECHOUSE 在线测试模式 |
-| `elechouse code <session_code>` | 只更新网站 session code |
-| `elechouse code clear` | 清空已保存的网站 session code |
-| `tcp echo on|off` | 控制读卡事件是否输出到 TCP |
+| `elechouse on <session_code>` | 启用 ELECHOUSE 在线测试模式，固定连接 `www.elechouse.com:9000` |
+| `elechouse clear` | 清空已保存的网站 session code |
+| `tcp events on|off` | 控制读卡事件是否输出到 TCP |
 | `tcp commands on|off` | 控制 TCP 是否接受命令 |
 | `tcp off` | 关闭 TCP socket |
 
@@ -333,25 +330,18 @@ interface events on|off
 interface commands on|off
 interface baud <baud>
 interface pulse <us> <gap_us>
-wiegand bits <26|34|37|56>
-aba digits <0..32>
-aba source raw|cn
-
-uart status
-uart on [baud]
-uart off
-uart baud <baud>
-uart echo on|off
-uart commands on|off
+interface wiegand bits <26|34|37|56>
+interface aba digits <0..32>
+interface aba source raw|cn
 ```
 
 UART 模式示例：
 
 ```text
 interface mode uart
-uart baud 115200
-uart echo on
-uart commands on
+interface baud 115200
+interface events on
+interface commands on
 save
 ```
 
@@ -359,7 +349,7 @@ Wiegand 34 位输出示例：
 
 ```text
 interface mode wiegand
-wiegand bits 34
+interface wiegand bits 34
 interface pulse 80 1800
 interface events on
 save
@@ -369,8 +359,8 @@ ABA Clock/Data 输出示例：
 
 ```text
 interface mode aba
-aba digits 10
-aba source raw
+interface aba digits 10
+interface aba source raw
 interface pulse 80 1800
 interface events on
 save
@@ -384,7 +374,7 @@ save
 | Wiegand | GPIO44/GPIO43 为 `D0/D1`，开漏低脉冲输出读卡事件 |
 | ABA | GPIO44/GPIO43 为 `Clock/Data`，Track-II 风格帧，开漏低脉冲输出读卡事件 |
 
-Wiegand 当前使用通用格式：首位偶校验、末位奇校验，中间数据位取卡号原始值低位。ABA 默认把卡号原始值转十进制输出；`aba source cn` 会优先使用事件中的 `CN=` 字段。
+Wiegand 当前使用通用格式：首位偶校验、末位奇校验，中间数据位取卡号原始值低位。ABA 默认把卡号原始值转十进制输出；`interface aba source cn` 会优先使用事件中的 `CN=` 字段。
 
 产品接口 GPIO 固定在板级 profile 中，不提供用户配置命令。
 
@@ -438,14 +428,12 @@ hf status
 hf speed <hz>
 hf mode scan|card
 hf tech a|b|f|v on|off
-hf card on [uid]
-hf card off
+hf card status
 hf card uid <hex>
 hf card ndef url <url>
 hf card ndef text <text>
 hf card ndef vcard <vcard_text>
 hf card ndef wifi <ssid> <password>
-hf card status
 ```
 
 当前主板 ST25R3916B 总线固定为 I2C：
@@ -462,7 +450,6 @@ save
 hf mode card
 hf card uid 02 00 00 01
 hf card ndef url https://www.elechouse.com/
-hf card on
 ```
 
 说明：Card emulation 当前目标固定为 NFC-A Type 4 Tag / NDEF。NDEF 配置参数已经保留并可保存；当前本地 ST25R3916 RFAL 驱动的 listen mode 仍需要继续补底层支持，补完后手机/读卡器才能实际读出该 NDEF 内容。
@@ -545,9 +532,9 @@ format line
 ### 7.1 通过 USB 配置 WiFi + TCP server
 
 ```text
-wifi MyWifi MyPassword
+wifi set MyWifi MyPassword
 tcp server 9000
-tcp echo on
+tcp events on
 tcp commands on
 format json
 save
@@ -558,9 +545,9 @@ reboot
 
 ```text
 interface mode uart
-uart baud 115200
-uart echo on
-uart commands on
+interface baud 115200
+interface events on
+interface commands on
 save
 ```
 
@@ -579,7 +566,7 @@ reboot
 也可以用 TCP 命令入口：
 
 ```text
-tcp elechouse A7K3Q9
+elechouse on A7K3Q9
 save
 ```
 
@@ -589,7 +576,7 @@ save
 
 ```text
 interface mode wiegand
-wiegand bits 34
+interface wiegand bits 34
 interface pulse 80 1800
 interface events on
 save
@@ -599,8 +586,8 @@ save
 
 ```text
 interface mode aba
-aba digits 10
-aba source raw
+interface aba digits 10
+interface aba source raw
 interface pulse 80 1800
 interface events on
 save
@@ -635,7 +622,7 @@ portal on
 - `clear` 或按键 10 秒会清空保存的运行配置，重启后恢复固件默认值。
 - TCP server 端口不要和网页端口冲突。
 - UART/TCP 的 `commands off` 会禁止该通道输入命令，但不影响事件输出。
-- UART/TCP 的 `echo off` 或 `events off` 只关闭该通道事件输出，不影响命令回复。
+- UART/TCP 的 `events off` 只关闭该通道事件输出，不影响命令回复。
 - Wiegand/ABA 模式下，GPIO44/GPIO43 只做脉冲输出；需要用 USB CDC、TCP 或网页继续配置。
 - 当前 ESP32-S3 GPIO 不是 5V 容忍输入输出；接 5V 控制器时需要外部电平转换或开漏接口保护。
 - 改 HF speed 后建议执行 `hf init` 或重启。

@@ -9,6 +9,12 @@ Firmware and local library dependencies for the ESP32-S3 LF/HF network RFID read
 - `libraries/ST25R3916_ELECHOUSE/` - ELECHOUSE ST25R3916/ST25R3916B driver with I2C/SPI support and current listen-mode work.
 - `hardware/` - Board notes and EasyEDA `.tel` schematic exports.
 
+## User Guide
+
+- Chinese operation and feature guide: [`OPERATION_GUIDE_CN.md`](OPERATION_GUIDE_CN.md)
+- Chinese command configuration manual: [`COMMAND_CONFIGURATION_MANUAL_CN.md`](COMMAND_CONFIGURATION_MANUAL_CN.md)
+- PDF command configuration manual: [`output/pdf/ELECHOUSE_Network_RFID_Command_Configuration_Manual_CN.pdf`](output/pdf/ELECHOUSE_Network_RFID_Command_Configuration_Manual_CN.pdf)
+
 ## Current Board Target
 
 - MCU board: ESP32-S3 SuperMini

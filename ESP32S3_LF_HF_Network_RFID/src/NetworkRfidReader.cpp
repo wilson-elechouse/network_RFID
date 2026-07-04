@@ -2438,9 +2438,9 @@ void NetworkRfidReader::handleCommand(String line) {
   String rest = line;
   const String cmd = lowerCopy(nextToken(rest));
 
-  if (cmd == "help" || cmd == "h" || cmd == "?") {
+  if (cmd == "help") {
     printHelp();
-  } else if (cmd == "status" || cmd == "s") {
+  } else if (cmd == "status") {
     printStatus();
   } else if (cmd == "pins") {
     printPins();
@@ -2448,36 +2448,28 @@ void NetworkRfidReader::handleCommand(String line) {
     handleWifiCommand(rest);
   } else if (cmd == "tcp") {
     handleTcpCommand(rest);
-  } else if (cmd == "elechouse" || cmd == "eh" || cmd == "broker") {
+  } else if (cmd == "elechouse") {
     handleElechouseCommand(rest);
-  } else if (cmd == "uart" || cmd == "serial1") {
-    handleUartCommand(rest);
-  } else if (cmd == "interface" || cmd == "iface" || cmd == "if") {
+  } else if (cmd == "interface") {
     handleInterfaceCommand(rest);
-  } else if (cmd == "wiegand" || cmd == "wg") {
-    rest = String(F("wiegand ")) + rest;
-    handleInterfaceCommand(rest);
-  } else if (cmd == "aba" || cmd == "clockdata") {
-    rest = String(F("aba ")) + rest;
-    handleInterfaceCommand(rest);
-  } else if (cmd == "portal" || cmd == "ap") {
+  } else if (cmd == "portal") {
     handlePortalCommand(rest);
-  } else if (cmd == "feedback" || cmd == "fb") {
+  } else if (cmd == "feedback") {
     handleFeedbackCommand(rest);
-  } else if (cmd == "button" || cmd == "key") {
+  } else if (cmd == "button") {
     handleButtonCommand(rest);
   } else if (cmd == "format") {
     const String fmt = lowerCopy(nextToken(rest));
     if (fmt == "json") {
       config_.outputFormat = NetworkRfidOutputFormat::Json;
       console_->println(F("OK format=json"));
-    } else if (fmt == "line" || fmt == "csv") {
+    } else if (fmt == "line") {
       config_.outputFormat = NetworkRfidOutputFormat::CsvLine;
       console_->println(F("OK format=line"));
     } else {
       console_->println(F("ERR format json|line"));
     }
-  } else if (cmd == "window" || cmd == "interval") {
+  } else if (cmd == "window") {
     const uint32_t lf = nextToken(rest).toInt();
     const uint32_t hf = nextToken(rest).toInt();
     if (lf < 20 || hf < 20) {
@@ -2526,19 +2518,6 @@ void NetworkRfidReader::handleCommand(String line) {
       }
     }
     console_->println(F("OK auto updated"));
-  } else if (cmd == "carrier") {
-    const String mode = lowerCopy(nextToken(rest));
-    if (mode == "on") {
-      setLfCarrier(true);
-    } else if (mode == "off") {
-      setLfCarrier(false);
-    } else {
-      console_->println(F("ERR carrier on|off"));
-      return;
-    }
-    printStatus();
-  } else if (cmd == "pin") {
-    handlePinCommand(rest);
   } else if (cmd == "lf") {
     handleLfCommand(rest);
   } else if (cmd == "hf") {
@@ -2550,7 +2529,7 @@ void NetworkRfidReader::handleCommand(String line) {
   } else if (cmd == "clear") {
     clearSavedConfig();
     console_->println(F("OK saved config cleared"));
-  } else if (cmd == "reboot" || cmd == "restart") {
+  } else if (cmd == "reboot") {
     console_->println(F("Rebooting"));
     delay(100);
     ESP.restart();
@@ -2564,7 +2543,11 @@ void NetworkRfidReader::handleCommand(String line) {
 
 void NetworkRfidReader::handleLfCommand(String rest) {
   const String sub = lowerCopy(nextToken(rest));
-  if (sub.length() == 0 || sub == "status") {
+  if (sub.length() == 0) {
+    console_->println(F("ERR lf init|off|status|freq <hz>|scan [start stop step ms]|raw <count>|hid [ms]|indala [samples]"));
+    return;
+  }
+  if (sub == "status") {
     console_->print(F("LF carrier="));
     console_->print(lfCarrierEnabled_ ? F("on") : F("off"));
     console_->print(F(" freq="));
@@ -2578,7 +2561,7 @@ void NetworkRfidReader::handleLfCommand(String rest) {
     return;
   }
 
-  if (sub == "init" || sub == "start") {
+  if (sub == "init") {
     config_.autoStartLf = true;
     console_->println(F("LF init starting"));
     setLfCapture(false);
@@ -2589,7 +2572,7 @@ void NetworkRfidReader::handleLfCommand(String rest) {
     return;
   }
 
-  if (sub == "off" || sub == "stop") {
+  if (sub == "off") {
     config_.autoStartLf = false;
     setLfCapture(false);
     setLfCarrier(false);
@@ -2600,7 +2583,7 @@ void NetworkRfidReader::handleLfCommand(String rest) {
     return;
   }
 
-  if (sub == "freq" || sub == "frequency") {
+  if (sub == "freq") {
     const uint32_t hz = nextToken(rest).toInt();
     if (hz < 100000UL || hz > 150000UL) {
       console_->println(F("ERR lf freq <100000..150000>"));
@@ -2626,7 +2609,7 @@ void NetworkRfidReader::handleLfCommand(String rest) {
     return;
   }
 
-  if (sub == "raw" || sub == "dump") {
+  if (sub == "raw") {
     uint32_t count = nextToken(rest).toInt();
     if (count == 0) {
       count = 128;
@@ -3016,7 +2999,11 @@ bool NetworkRfidReader::captureIndalaSamples(
 
 void NetworkRfidReader::handleHfCommand(String rest) {
   const String sub = lowerCopy(nextToken(rest));
-  if (sub.length() == 0 || sub == "status") {
+  if (sub.length() == 0) {
+    console_->println(F("ERR hf status|probe|speed <hz>|init|off|mode scan|card|tech a|b|f|v on|off|card ..."));
+    return;
+  }
+  if (sub == "status") {
     console_->print(F("HF bus="));
     console_->print(hfBusModeName(config_.pins.hfBusMode));
     console_->print(F(" role="));
@@ -3046,19 +3033,16 @@ void NetworkRfidReader::handleHfCommand(String rest) {
     return;
   }
 
-  if (sub == "mode" || sub == "role") {
+  if (sub == "mode") {
     const String mode = lowerCopy(nextToken(rest));
-    if (mode == "scan" || mode == "reader" || mode == "poll") {
+    if (mode == "scan") {
       config_.hfRole = NetworkRfidHfRole::Scan;
-    } else if (mode == "card" || mode == "emu" || mode == "cardemu" || mode == "listen") {
+    } else if (mode == "card") {
       config_.hfRole = NetworkRfidHfRole::CardEmulation;
       config_.autoInitHf = true;
       if (!hfReady_) {
         hfReady_ = setupHf();
       }
-    } else if (mode == "p2p" || mode == "peer") {
-      console_->println(F("ERR hf p2p disabled"));
-      return;
     } else {
       console_->println(F("ERR hf mode scan|card"));
       return;
@@ -3069,14 +3053,7 @@ void NetworkRfidReader::handleHfCommand(String rest) {
     return;
   }
 
-  if (sub == "scan" || sub == "reader") {
-    config_.hfRole = NetworkRfidHfRole::Scan;
-    restartHfRole();
-    console_->println(F("OK hf mode=scan"));
-    return;
-  }
-
-  if (sub == "tech" || sub == "techs") {
+  if (sub == "tech") {
     const String tech = lowerCopy(nextToken(rest));
     const String value = lowerCopy(nextToken(rest));
     if (tech.length() == 0 || value.length() == 0) {
@@ -3084,24 +3061,21 @@ void NetworkRfidReader::handleHfCommand(String rest) {
       return;
     }
     uint16_t mask = 0;
-    if (tech == "a" || tech == "14443a") {
+    if (tech == "a") {
       mask = RFAL_NFC_POLL_TECH_A;
-    } else if (tech == "b" || tech == "14443b") {
+    } else if (tech == "b") {
       mask = RFAL_NFC_POLL_TECH_B;
-    } else if (tech == "f" || tech == "nfcf") {
+    } else if (tech == "f") {
       mask = RFAL_NFC_POLL_TECH_F;
-    } else if (tech == "v" || tech == "15693") {
+    } else if (tech == "v") {
       mask = RFAL_NFC_POLL_TECH_V;
-    } else if (tech == "p2p" || tech == "ap2p") {
-      console_->println(F("ERR hf p2p disabled"));
-      return;
     } else {
       console_->println(F("ERR hf tech a|b|f|v on|off"));
       return;
     }
-    if (value == "on" || value == "1") {
+    if (value == "on") {
       config_.hfTechs |= mask;
-    } else if (value == "off" || value == "0") {
+    } else if (value == "off") {
       config_.hfTechs &= ~mask;
     } else {
       console_->println(F("ERR hf tech a|b|f|v on|off"));
@@ -3113,23 +3087,13 @@ void NetworkRfidReader::handleHfCommand(String rest) {
     return;
   }
 
-  if (sub == "card" || sub == "emu" || sub == "cardemu") {
+  if (sub == "card") {
     String action = lowerCopy(nextToken(rest));
-    String assigned_uid;
-    String assigned_type;
-    if (action.startsWith("uid=")) {
-      assigned_uid = action.substring(4);
-      rest.trim();
-      if (rest.length() > 0) {
-        assigned_uid += ' ';
-        assigned_uid += rest;
-      }
-      action = "uid";
-    } else if (action.startsWith("type=")) {
-      assigned_type = action.substring(5);
-      action = "type";
+    if (action.length() == 0) {
+      console_->println(F("ERR hf card status|uid <hex>|type nfc-a-t4t|nfc-a-t2t|ndef url|text|vcard|wifi <payload>"));
+      return;
     }
-    if (action.length() == 0 || action == "status") {
+    if (action == "status") {
       console_->print(F("hf card role="));
       console_->print(hfRoleName(config_.hfRole));
       console_->print(F(" ready="));
@@ -3154,40 +3118,8 @@ void NetworkRfidReader::handleHfCommand(String rest) {
       console_->println(F("\""));
       return;
     }
-    if (action == "on" || action == "start") {
-      rest.trim();
-      if (rest.length() > 0) {
-        size_t uid_len = 0;
-        uint8_t uid[RFAL_NFCID1_TRIPLE_LEN] = {};
-        if (!parseHexBytes(rest, uid, sizeof(uid), uid_len) ||
-            (uid_len != 4 && uid_len != 7)) {
-          console_->println(F("ERR hf card on [4|7-byte-uid-hex]"));
-          return;
-        }
-        config_.hfCardUid = hexBytes(uid, uid_len, true);
-      }
-      config_.hfRole = NetworkRfidHfRole::CardEmulation;
-      config_.autoInitHf = true;
-      if (!hfReady_) {
-        hfReady_ = setupHf();
-      }
-      if (hfCardEmulationActive_) {
-        stopHfCardEmulation();
-        lastHfCardEmuAttemptMs_ = 0;
-      }
-      restartHfRole();
-      console_->println(hfCardEmulationActive_ ? F("OK hf card emulation on") : F("ERR hf card emulation unavailable"));
-      return;
-    }
-    if (action == "off" || action == "stop") {
-      stopHfCardEmulation();
-      config_.hfRole = NetworkRfidHfRole::Scan;
-      restartHfRole();
-      console_->println(F("OK hf card emulation off"));
-      return;
-    }
     if (action == "uid") {
-      String uid_text = assigned_uid.length() > 0 ? assigned_uid : rest;
+      String uid_text = rest;
       uid_text.trim();
       String lower_uid = lowerCopy(uid_text);
       int cut_pos = -1;
@@ -3210,16 +3142,11 @@ void NetworkRfidReader::handleHfCommand(String rest) {
         return;
       }
       config_.hfCardUid = hexBytes(uid, uid_len, true);
-      config_.hfRole = NetworkRfidHfRole::CardEmulation;
-      config_.autoInitHf = true;
-      if (!hfReady_) {
-        hfReady_ = setupHf();
-      }
       if (hfCardEmulationActive_) {
         stopHfCardEmulation();
         lastHfCardEmuAttemptMs_ = 0;
+        restartHfRole();
       }
-      restartHfRole();
       console_->print(F("OK hf card uid="));
       console_->print(config_.hfCardUid);
       console_->print(F(" active="));
@@ -3227,12 +3154,11 @@ void NetworkRfidReader::handleHfCommand(String rest) {
       return;
     }
     if (action == "type") {
-      String type = assigned_type.length() > 0 ? assigned_type : lowerCopy(nextToken(rest));
+      String type = lowerCopy(nextToken(rest));
       type.trim();
-      if (type == "nfc-a-t4t" || type == "t4t" || type == "type4" || type == "type-4" || type == "4") {
+      if (type == "nfc-a-t4t") {
         config_.hfCardType = NetworkRfidHfCardType::NfcAType4;
-      } else if (type == "nfc-a-t2t" || type == "t2t" || type == "type2" || type == "type-2" ||
-                 type == "2" || type == "ntag" || type == "ultralight") {
+      } else if (type == "nfc-a-t2t") {
         config_.hfCardType = NetworkRfidHfCardType::NfcAType2;
       } else {
         console_->println(F("ERR hf card type nfc-a-t4t|nfc-a-t2t"));
@@ -3249,7 +3175,7 @@ void NetworkRfidReader::handleHfCommand(String rest) {
       console_->println(hfCardTypeName(config_.hfCardType));
       return;
     }
-    if (action == "ndef" || action == "payload") {
+    if (action == "ndef") {
       const String type = lowerCopy(nextToken(rest));
       rest.trim();
       if (type == "url") {
@@ -3271,24 +3197,14 @@ void NetworkRfidReader::handleHfCommand(String rest) {
         limitString(config_.hfCardWifiSsid, kMaxHfCardWifiSsidLen);
         limitString(config_.hfCardWifiPassword, kMaxHfCardWifiPasswordLen);
       } else {
-        console_->println(F("ERR hf card ndef url|text|vcard|wifi <payload>"));
+        console_->println(F("ERR hf card ndef url <url>|text <text>|vcard <text>|wifi <ssid> <password>"));
         return;
       }
       console_->print(F("OK hf card ndef="));
       console_->println(hfCardPayloadTypeName(config_.hfCardPayloadType));
       return;
     }
-    console_->println(F("ERR hf card on [uid]|off|uid <hex>|uid=<hex>|type nfc-a-t4t|nfc-a-t2t|ndef url|text|vcard|wifi <payload>|status"));
-    return;
-  }
-
-  if (sub == "p2p" || sub == "peer") {
-    console_->println(F("ERR hf p2p disabled"));
-    return;
-  }
-
-  if (sub == "bus") {
-    console_->println(F("HF bus is fixed by board profile: i2c"));
+    console_->println(F("ERR hf card status|uid <hex>|type nfc-a-t4t|nfc-a-t2t|ndef url|text|vcard|wifi <payload>"));
     return;
   }
 
@@ -3311,7 +3227,7 @@ void NetworkRfidReader::handleHfCommand(String rest) {
     return;
   }
 
-  if (sub == "init" || sub == "start") {
+  if (sub == "init") {
     config_.autoInitHf = true;
     console_->println(F("HF init starting"));
     hfReady_ = setupHf();
@@ -3324,7 +3240,7 @@ void NetworkRfidReader::handleHfCommand(String rest) {
     return;
   }
 
-  if (sub == "off" || sub == "stop") {
+  if (sub == "off") {
     config_.autoInitHf = false;
     releaseHf();
     if (isLfEnabled()) {
@@ -3334,14 +3250,18 @@ void NetworkRfidReader::handleHfCommand(String rest) {
     return;
   }
 
-  console_->println(F("ERR hf probe|speed|mode|scan|tech|card|init|off|status"));
+  console_->println(F("ERR hf status|probe|speed <hz>|init|off|mode scan|card|tech a|b|f|v on|off|card ..."));
 }
 
 void NetworkRfidReader::handleWifiCommand(String rest) {
   const String first = nextToken(rest);
   const String action = lowerCopy(first);
 
-  if (first.length() == 0 || action == "status") {
+  if (first.length() == 0) {
+    console_->println(F("ERR wifi status|scan [ssid]|set <ssid> <password>|reconnect|clear"));
+    return;
+  }
+  if (action == "status") {
     const wl_status_t status = WiFi.status();
     console_->print(F("wifi ssid="));
     console_->print(config_.wifiSsid);
@@ -3374,7 +3294,7 @@ void NetworkRfidReader::handleWifiCommand(String rest) {
     return;
   }
 
-  if (action == "off" || action == "clear") {
+  if (action == "clear") {
     config_.wifiSsid = "";
     config_.wifiPassword = "";
     wifiConnectInProgress_ = false;
@@ -3384,7 +3304,7 @@ void NetworkRfidReader::handleWifiCommand(String rest) {
     return;
   }
 
-  if (action == "reconnect" || action == "retry") {
+  if (action == "reconnect") {
     if (config_.wifiSsid.length() == 0) {
       console_->println(F("ERR wifi ssid is empty"));
       return;
@@ -3418,7 +3338,18 @@ void NetworkRfidReader::handleWifiCommand(String rest) {
     return;
   }
 
-  config_.wifiSsid = first;
+  if (action != "set") {
+    console_->println(F("ERR wifi status|scan [ssid]|set <ssid> <password>|reconnect|clear"));
+    return;
+  }
+
+  const String ssid = nextToken(rest);
+  if (ssid.length() == 0) {
+    console_->println(F("ERR wifi set <ssid> <password>"));
+    return;
+  }
+
+  config_.wifiSsid = ssid;
   rest.trim();
   config_.wifiPassword = rest;
   restartStation();
@@ -3428,7 +3359,11 @@ void NetworkRfidReader::handleWifiCommand(String rest) {
 void NetworkRfidReader::handleTcpCommand(String rest) {
   const String sub = lowerCopy(nextToken(rest));
 
-  if (sub.length() == 0 || sub == "status") {
+  if (sub.length() == 0) {
+    console_->println(F("ERR tcp status|client <host> <port>|server <port>|off|events on|off|commands on|off"));
+    return;
+  }
+  if (sub == "status") {
     console_->print(F("tcp mode="));
     console_->print(tcpModeName(config_.tcpMode));
     console_->print(F(" host="));
@@ -3437,7 +3372,7 @@ void NetworkRfidReader::handleTcpCommand(String rest) {
     console_->print(config_.tcpMode == NetworkRfidTcpMode::ElechouseTest ? kElechouseBrokerPort : config_.tcpPort);
     console_->print(F(" listen="));
     console_->print(config_.tcpListenPort);
-    console_->print(F(" echo="));
+    console_->print(F(" events="));
     console_->print(config_.tcpEchoEvents ? F("on") : F("off"));
     console_->print(F(" commands="));
     console_->print(config_.tcpCommands ? F("on") : F("off"));
@@ -3456,32 +3391,6 @@ void NetworkRfidReader::handleTcpCommand(String rest) {
   if (sub == "off") {
     config_.tcpMode = NetworkRfidTcpMode::Off;
     console_->println(F("OK tcp off"));
-    if (console_ == &tcpClient_ || console_ == &serverClient_) {
-      console_->flush();
-      delay(20);
-    }
-    restartTcpSocket();
-    return;
-  }
-
-  if (sub == "elechouse" || sub == "eh" || sub == "broker" || sub == "test") {
-    String code = nextToken(rest);
-    code.trim();
-    if (code.length() == 0 && config_.elechouseSessionCode.length() == 0) {
-      console_->println(F("ERR tcp elechouse <session_code>"));
-      return;
-    }
-    if (code.length() > 0) {
-      if (!isValidElechouseSessionCode(code)) {
-        console_->println(F("ERR session code chars: A-Z a-z 0-9 _ . : - max64"));
-        return;
-      }
-      config_.elechouseSessionCode = code;
-    }
-    config_.tcpMode = NetworkRfidTcpMode::ElechouseTest;
-    config_.tcpEchoEvents = true;
-    config_.tcpCommands = true;
-    console_->println(F("OK tcp elechouse"));
     if (console_ == &tcpClient_ || console_ == &serverClient_) {
       console_->flush();
       delay(20);
@@ -3526,18 +3435,18 @@ void NetworkRfidReader::handleTcpCommand(String rest) {
     return;
   }
 
-  if (sub == "echo") {
+  if (sub == "events") {
     const String value = lowerCopy(nextToken(rest));
     if (value != "on" && value != "off") {
-      console_->println(F("ERR tcp echo on|off"));
+      console_->println(F("ERR tcp events on|off"));
       return;
     }
     config_.tcpEchoEvents = value == "on";
-    console_->println(F("OK tcp echo updated"));
+    console_->println(F("OK tcp events updated"));
     return;
   }
 
-  if (sub == "commands" || sub == "cmd") {
+  if (sub == "commands") {
     const String value = lowerCopy(nextToken(rest));
     if (value != "on" && value != "off") {
       console_->println(F("ERR tcp commands on|off"));
@@ -3548,12 +3457,16 @@ void NetworkRfidReader::handleTcpCommand(String rest) {
     return;
   }
 
-  console_->println(F("ERR tcp off|client|server|elechouse <session>|echo|commands|status"));
+  console_->println(F("ERR tcp status|client <host> <port>|server <port>|off|events on|off|commands on|off"));
 }
 
 void NetworkRfidReader::handleElechouseCommand(String rest) {
   const String sub = lowerCopy(nextToken(rest));
-  if (sub.length() == 0 || sub == "status") {
+  if (sub.length() == 0) {
+    console_->println(F("ERR elechouse status|on <session_code>|off|reconnect|clear"));
+    return;
+  }
+  if (sub == "status") {
     console_->print(F("elechouse host="));
     console_->print(kElechouseBrokerHost);
     console_->print(F(" port="));
@@ -3569,38 +3482,21 @@ void NetworkRfidReader::handleElechouseCommand(String rest) {
     return;
   }
 
-  if (sub == "code" || sub == "session") {
-    String code = nextToken(rest);
-    code.trim();
-    if (lowerCopy(code) == "clear" || lowerCopy(code) == "off" || lowerCopy(code) == "none") {
-      config_.elechouseSessionCode = "";
-      elechouseBrokerOk_ = false;
-      console_->println(F("OK elechouse code cleared"));
-      return;
-    }
-    if (!isValidElechouseSessionCode(code)) {
-      console_->println(F("ERR elechouse code <session_code|clear>, chars A-Z a-z 0-9 _ . : - max64"));
-      return;
-    }
-    config_.elechouseSessionCode = code;
-    console_->println(F("OK elechouse code updated"));
+  if (sub == "clear") {
+    config_.elechouseSessionCode = "";
+    elechouseBrokerOk_ = false;
+    console_->println(F("OK elechouse cleared"));
     return;
   }
 
-  if (sub == "on" || sub == "start" || sub == "connect") {
+  if (sub == "on") {
     String code = nextToken(rest);
     code.trim();
-    if (code.length() > 0) {
-      if (!isValidElechouseSessionCode(code)) {
-        console_->println(F("ERR elechouse on <session_code>"));
-        return;
-      }
-      config_.elechouseSessionCode = code;
-    }
-    if (config_.elechouseSessionCode.length() == 0) {
-      console_->println(F("ERR elechouse code is empty"));
+    if (!isValidElechouseSessionCode(code)) {
+      console_->println(F("ERR elechouse on <session_code>"));
       return;
     }
+    config_.elechouseSessionCode = code;
     config_.tcpMode = NetworkRfidTcpMode::ElechouseTest;
     config_.tcpEchoEvents = true;
     config_.tcpCommands = true;
@@ -3613,7 +3509,7 @@ void NetworkRfidReader::handleElechouseCommand(String rest) {
     return;
   }
 
-  if (sub == "off" || sub == "stop") {
+  if (sub == "off") {
     if (config_.tcpMode == NetworkRfidTcpMode::ElechouseTest) {
       config_.tcpMode = NetworkRfidTcpMode::Off;
       console_->println(F("OK elechouse test off"));
@@ -3628,7 +3524,11 @@ void NetworkRfidReader::handleElechouseCommand(String rest) {
     return;
   }
 
-  if (sub == "reconnect" || sub == "retry") {
+  if (sub == "reconnect") {
+    if (config_.elechouseSessionCode.length() == 0) {
+      console_->println(F("ERR elechouse on <session_code>"));
+      return;
+    }
     if (config_.tcpMode != NetworkRfidTcpMode::ElechouseTest) {
       config_.tcpMode = NetworkRfidTcpMode::ElechouseTest;
     }
@@ -3638,22 +3538,16 @@ void NetworkRfidReader::handleElechouseCommand(String rest) {
     return;
   }
 
-  if (isValidElechouseSessionCode(sub)) {
-    config_.elechouseSessionCode = sub;
-    config_.tcpMode = NetworkRfidTcpMode::ElechouseTest;
-    config_.tcpEchoEvents = true;
-    config_.tcpCommands = true;
-    restartTcpSocket();
-    console_->println(F("OK elechouse test on"));
-    return;
-  }
-
-  console_->println(F("ERR elechouse status|code <session|clear>|on [session]|off|reconnect"));
+  console_->println(F("ERR elechouse status|on <session_code>|off|reconnect|clear"));
 }
 
 void NetworkRfidReader::handlePortalCommand(String rest) {
   const String sub = lowerCopy(nextToken(rest));
-  if (sub.length() == 0 || sub == "status") {
+  if (sub.length() == 0) {
+    console_->println(F("ERR portal on|off|status|ssid <ssid> [password]"));
+    return;
+  }
+  if (sub == "status") {
     console_->print(F("portal enabled="));
     console_->print(config_.configPortalEnabled ? F("yes") : F("no"));
     console_->print(F(" running="));
@@ -3706,123 +3600,13 @@ void NetworkRfidReader::handlePortalCommand(String rest) {
   console_->println(F("ERR portal on|off|status|ssid"));
 }
 
-void NetworkRfidReader::handleUartCommand(String rest) {
-  const String sub = lowerCopy(nextToken(rest));
-  if (sub.length() == 0 || sub == "status") {
-    console_->print(F("uart mode="));
-    console_->print(productInterfaceModeName(config_.productInterfaceMode));
-    console_->print(F(" enabled="));
-    console_->print(config_.hardwareUartEnabled ? F("yes") : F("no"));
-    console_->print(F(" ready="));
-    console_->print(hardwareUartReady_ ? F("yes") : F("no"));
-    console_->print(F(" baud="));
-    console_->print(config_.hardwareUartBaud);
-    console_->print(F(" rx="));
-    console_->print(config_.pins.hardwareUartRx);
-    console_->print(F(" tx="));
-    console_->print(config_.pins.hardwareUartTx);
-    console_->print(F(" echo="));
-    console_->print(config_.hardwareUartEchoEvents ? F("on") : F("off"));
-    console_->print(F(" commands="));
-    console_->println(config_.hardwareUartCommands ? F("on") : F("off"));
-    return;
-  }
-
-  if (sub == "on" || sub == "start") {
-    const String baud = nextToken(rest);
-    if (baud.length() > 0) {
-      const uint32_t value = baud.toInt();
-      if (value < 1200UL || value > 3000000UL) {
-        console_->println(F("ERR uart baud 1200..3000000"));
-        return;
-      }
-      config_.hardwareUartBaud = value;
-    }
-    config_.productInterfaceMode = NetworkRfidProductInterfaceMode::Uart;
-    config_.hardwareUartEnabled = true;
-    const bool command_from_uart = console_ == &hardwareUart_;
-    if (command_from_uart) {
-      console_->println(F("OK uart on"));
-      console_->flush();
-      delay(20);
-    }
-    restartProductInterface();
-    if (!command_from_uart) {
-      console_->println(F("OK uart on"));
-    }
-    return;
-  }
-
-  if (sub == "off" || sub == "stop") {
-    config_.hardwareUartEnabled = false;
-    console_->println(F("OK uart off"));
-    if (console_ == &hardwareUart_) {
-      console_->flush();
-      delay(20);
-    }
-    restartProductInterface();
-    return;
-  }
-
-  if (sub == "baud" || sub == "speed") {
-    const uint32_t baud = nextToken(rest).toInt();
-    if (baud < 1200UL || baud > 3000000UL) {
-      console_->println(F("ERR uart baud 1200..3000000"));
-      return;
-    }
-    config_.hardwareUartBaud = baud;
-    config_.productInterfaceMode = NetworkRfidProductInterfaceMode::Uart;
-    const bool command_from_uart = console_ == &hardwareUart_;
-    if (command_from_uart) {
-      console_->print(F("OK uart baud="));
-      console_->println(config_.hardwareUartBaud);
-      console_->flush();
-      delay(20);
-    }
-    restartProductInterface();
-    if (!command_from_uart) {
-      console_->print(F("OK uart baud="));
-      console_->println(config_.hardwareUartBaud);
-    }
-    return;
-  }
-
-  if (sub == "pins" || sub == "pin") {
-    console_->print(F("UART pins are fixed by board profile: rx="));
-    console_->print(config_.pins.hardwareUartRx);
-    console_->print(F(" tx="));
-    console_->println(config_.pins.hardwareUartTx);
-    return;
-  }
-
-  if (sub == "echo") {
-    const String value = lowerCopy(nextToken(rest));
-    if (value != "on" && value != "off") {
-      console_->println(F("ERR uart echo on|off"));
-      return;
-    }
-    config_.hardwareUartEchoEvents = value == "on";
-    console_->println(F("OK uart echo updated"));
-    return;
-  }
-
-  if (sub == "commands" || sub == "cmd") {
-    const String value = lowerCopy(nextToken(rest));
-    if (value != "on" && value != "off") {
-      console_->println(F("ERR uart commands on|off"));
-      return;
-    }
-    config_.hardwareUartCommands = value == "on";
-    console_->println(F("OK uart commands updated"));
-    return;
-  }
-
-  console_->println(F("ERR uart status|on [baud]|off|baud <baud>|echo on|off|commands on|off"));
-}
-
 void NetworkRfidReader::handleInterfaceCommand(String rest) {
   const String sub = lowerCopy(nextToken(rest));
-  if (sub.length() == 0 || sub == "status") {
+  if (sub.length() == 0) {
+    console_->println(F("ERR interface status|mode uart|wiegand|aba|on|off|events on|off|commands on|off|baud <baud>|pulse <us> <gap_us>|wiegand bits <bits>|aba digits <n>|aba source raw|cn"));
+    return;
+  }
+  if (sub == "status") {
     console_->print(F("interface mode="));
     console_->print(productInterfaceModeName(config_.productInterfaceMode));
     console_->print(F(" enabled="));
@@ -3858,22 +3642,14 @@ void NetworkRfidReader::handleInterfaceCommand(String rest) {
     return;
   }
 
-  if (sub == "pins" || sub == "pin") {
-    console_->print(F("Product interface pins are fixed by board profile: UART RX/D0/Clock GPIO"));
-    console_->print(config_.pins.hardwareUartRx);
-    console_->print(F(" UART TX/D1/Data GPIO"));
-    console_->println(config_.pins.hardwareUartTx);
-    return;
-  }
-
   if (sub == "mode") {
     const String value = lowerCopy(nextToken(rest));
     NetworkRfidProductInterfaceMode mode = config_.productInterfaceMode;
-    if (value == "uart" || value == "serial" || value == "serial1") {
+    if (value == "uart") {
       mode = NetworkRfidProductInterfaceMode::Uart;
-    } else if (value == "wiegand" || value == "wg") {
+    } else if (value == "wiegand") {
       mode = NetworkRfidProductInterfaceMode::Wiegand;
-    } else if (value == "aba" || value == "clockdata" || value == "clock-data") {
+    } else if (value == "aba") {
       mode = NetworkRfidProductInterfaceMode::Aba;
     } else {
       console_->println(F("ERR interface mode uart|wiegand|aba"));
@@ -3897,7 +3673,7 @@ void NetworkRfidReader::handleInterfaceCommand(String rest) {
     return;
   }
 
-  if (sub == "on" || sub == "start") {
+  if (sub == "on") {
     config_.hardwareUartEnabled = true;
     const bool command_from_uart = console_ == &hardwareUart_;
     if (command_from_uart) {
@@ -3912,7 +3688,7 @@ void NetworkRfidReader::handleInterfaceCommand(String rest) {
     return;
   }
 
-  if (sub == "off" || sub == "stop") {
+  if (sub == "off") {
     config_.hardwareUartEnabled = false;
     console_->println(F("OK interface off"));
     if (console_ == &hardwareUart_) {
@@ -3923,7 +3699,7 @@ void NetworkRfidReader::handleInterfaceCommand(String rest) {
     return;
   }
 
-  if (sub == "events" || sub == "echo") {
+  if (sub == "events") {
     const String value = lowerCopy(nextToken(rest));
     if (value != "on" && value != "off") {
       console_->println(F("ERR interface events on|off"));
@@ -3934,7 +3710,7 @@ void NetworkRfidReader::handleInterfaceCommand(String rest) {
     return;
   }
 
-  if (sub == "commands" || sub == "cmd") {
+  if (sub == "commands") {
     const String value = lowerCopy(nextToken(rest));
     if (value != "on" && value != "off") {
       console_->println(F("ERR interface commands on|off"));
@@ -3945,7 +3721,7 @@ void NetworkRfidReader::handleInterfaceCommand(String rest) {
     return;
   }
 
-  if (sub == "baud" || sub == "speed") {
+  if (sub == "baud") {
     const uint32_t baud = nextToken(rest).toInt();
     if (baud < 1200UL || baud > 3000000UL) {
       console_->println(F("ERR interface baud 1200..3000000"));
@@ -3990,27 +3766,12 @@ void NetworkRfidReader::handleInterfaceCommand(String rest) {
     return;
   }
 
-  if (sub == "wiegand" || sub == "wg") {
+  if (sub == "wiegand") {
     const String action = lowerCopy(nextToken(rest));
-    if (action.length() == 0 || action == "on" || action == "start") {
-      config_.productInterfaceMode = NetworkRfidProductInterfaceMode::Wiegand;
-      config_.hardwareUartEnabled = true;
-      const bool command_from_uart = console_ == &hardwareUart_;
-      if (command_from_uart) {
-        console_->println(F("OK interface mode=wiegand"));
-        console_->flush();
-        delay(20);
-      }
-      restartProductInterface();
-      if (!command_from_uart) {
-        console_->println(F("OK interface mode=wiegand"));
-      }
-      return;
-    }
-    if (action == "bits" || action == "bit") {
+    if (action == "bits") {
       const uint8_t bits = static_cast<uint8_t>(nextToken(rest).toInt());
       if (!isSupportedWiegandBits(bits)) {
-        console_->println(F("ERR wiegand bits 26|34|37|56"));
+        console_->println(F("ERR interface wiegand bits 26|34|37|56"));
         return;
       }
       config_.wiegandBits = bits;
@@ -4018,36 +3779,16 @@ void NetworkRfidReader::handleInterfaceCommand(String rest) {
       console_->println(config_.wiegandBits);
       return;
     }
-    if (action == "status") {
-      rest = F("status");
-      handleInterfaceCommand(rest);
-      return;
-    }
-    console_->println(F("ERR interface wiegand [on]|bits <26|34|37|56>|status"));
+    console_->println(F("ERR interface wiegand bits <26|34|37|56>"));
     return;
   }
 
-  if (sub == "aba" || sub == "clockdata" || sub == "clock-data") {
+  if (sub == "aba") {
     const String action = lowerCopy(nextToken(rest));
-    if (action.length() == 0 || action == "on" || action == "start") {
-      config_.productInterfaceMode = NetworkRfidProductInterfaceMode::Aba;
-      config_.hardwareUartEnabled = true;
-      const bool command_from_uart = console_ == &hardwareUart_;
-      if (command_from_uart) {
-        console_->println(F("OK interface mode=aba"));
-        console_->flush();
-        delay(20);
-      }
-      restartProductInterface();
-      if (!command_from_uart) {
-        console_->println(F("OK interface mode=aba"));
-      }
-      return;
-    }
     if (action == "digits") {
       const uint32_t digits = nextToken(rest).toInt();
       if (digits > 32) {
-        console_->println(F("ERR aba digits 0..32"));
+        console_->println(F("ERR interface aba digits 0..32"));
         return;
       }
       config_.abaDigits = static_cast<uint8_t>(digits);
@@ -4063,22 +3804,17 @@ void NetworkRfidReader::handleInterfaceCommand(String rest) {
       const String source = lowerCopy(nextToken(rest));
       if (source == "raw") {
         config_.abaUseCardNumber = false;
-      } else if (source == "cn" || source == "card" || source == "cardnumber") {
+      } else if (source == "cn") {
         config_.abaUseCardNumber = true;
       } else {
-        console_->println(F("ERR aba source raw|cn"));
+        console_->println(F("ERR interface aba source raw|cn"));
         return;
       }
       console_->print(F("OK aba source="));
       console_->println(config_.abaUseCardNumber ? F("cn") : F("raw"));
       return;
     }
-    if (action == "status") {
-      rest = F("status");
-      handleInterfaceCommand(rest);
-      return;
-    }
-    console_->println(F("ERR interface aba [on]|digits <0..32>|source raw|cn|status"));
+    console_->println(F("ERR interface aba digits <0..32>|source raw|cn"));
     return;
   }
 
@@ -4087,7 +3823,11 @@ void NetworkRfidReader::handleInterfaceCommand(String rest) {
 
 void NetworkRfidReader::handleFeedbackCommand(String rest) {
   const String sub = lowerCopy(nextToken(rest));
-  if (sub.length() == 0 || sub == "status") {
+  if (sub.length() == 0) {
+    console_->println(F("ERR feedback status|on|off|buzzer <hz> <ms>|success_ms <ms>|idle <r> <g> <b>|success <r> <g> <b>|test"));
+    return;
+  }
+  if (sub == "status") {
     console_->print(F("feedback enabled="));
     console_->print(config_.feedbackEnabled ? F("yes") : F("no"));
     console_->print(F(" led="));
@@ -4114,11 +3854,6 @@ void NetworkRfidReader::handleFeedbackCommand(String rest) {
     stopFeedbackBuzzer();
     setFeedbackLed(0, 0, 0);
     console_->println(F("OK feedback off"));
-    return;
-  }
-  if (sub == "led") {
-    console_->print(F("Feedback LED pin is fixed by board profile: "));
-    console_->println(config_.pins.feedbackLed);
     return;
   }
   if (sub == "buzzer") {
@@ -4175,7 +3910,11 @@ void NetworkRfidReader::handleFeedbackCommand(String rest) {
 
 void NetworkRfidReader::handleButtonCommand(String rest) {
   const String sub = lowerCopy(nextToken(rest));
-  if (sub.length() == 0 || sub == "status") {
+  if (sub.length() == 0) {
+    console_->println(F("ERR button status|on|off|timing <wifi_ms> <reset_ms>"));
+    return;
+  }
+  if (sub == "status") {
     console_->print(F("button enabled="));
     console_->print(config_.configButtonEnabled ? F("yes") : F("no"));
     console_->print(F(" pin="));
@@ -4203,17 +3942,7 @@ void NetworkRfidReader::handleButtonCommand(String rest) {
     console_->println(F("OK button off"));
     return;
   }
-  if (sub == "pin") {
-    console_->print(F("Button pin is fixed by board profile: "));
-    console_->println(config_.pins.configButton);
-    return;
-  }
-  if (sub == "active_low") {
-    console_->print(F("Button polarity is fixed by board profile: "));
-    console_->println(config_.pins.configButtonActiveLow ? F("active-low") : F("active-high"));
-    return;
-  }
-  if (sub == "timing" || sub == "timings") {
+  if (sub == "timing") {
     const uint32_t wifi_ms = nextToken(rest).toInt();
     const uint32_t reset_ms = nextToken(rest).toInt();
     if (wifi_ms < 1000UL || reset_ms <= wifi_ms || reset_ms > 60000UL) {
@@ -4227,19 +3956,6 @@ void NetworkRfidReader::handleButtonCommand(String rest) {
   }
 
   console_->println(F("ERR button status|on|off|timing <wifi_ms> <reset_ms>"));
-}
-
-void NetworkRfidReader::handlePinCommand(String rest) {
-  const String name = lowerCopy(nextToken(rest));
-  const String value = nextToken(rest);
-  if (name.length() == 0 || value.length() == 0) {
-    printPins();
-    return;
-  }
-
-  (void)name;
-  (void)value;
-  console_->println(F("ERR hardware pins are fixed by board profile; edit NetworkRfidBoardProfile.h and rebuild"));
 }
 
 void NetworkRfidReader::startConfigPortal() {
@@ -5749,12 +5465,11 @@ void NetworkRfidReader::printHelp() {
   console_->println(F("ESP32S3 LF/HF Network RFID"));
   console_->println(F("Commands:"));
   console_->println(F("  help | status | pins"));
-  console_->println(F("  wifi [status] | wifi scan [ssid] | wifi <ssid> <password> | wifi reconnect | wifi off"));
-  console_->println(F("  tcp client <host> <port> | tcp server <port> | tcp elechouse <session> | tcp off | tcp echo on|off | tcp commands on|off | tcp status"));
-  console_->println(F("  elechouse status|code <session|clear>|on [session]|off|reconnect"));
-  console_->println(F("  uart status|on [baud]|off|baud <baud>|echo on|off|commands on|off"));
+  console_->println(F("  wifi status | wifi scan [ssid] | wifi set <ssid> <password> | wifi reconnect | wifi clear"));
+  console_->println(F("  tcp status | tcp client <host> <port> | tcp server <port> | tcp off | tcp events on|off | tcp commands on|off"));
+  console_->println(F("  elechouse status | elechouse on <session_code> | elechouse off | elechouse reconnect | elechouse clear"));
   console_->println(F("  interface status|mode uart|wiegand|aba|on|off|events on|off|commands on|off|baud <baud>"));
-  console_->println(F("  interface pulse <us> <gap_us> | wiegand bits <26|34|37|56> | aba digits <0..32> | aba source raw|cn"));
+  console_->println(F("  interface pulse <us> <gap_us> | interface wiegand bits <26|34|37|56> | interface aba digits <0..32> | interface aba source raw|cn"));
   console_->println(F("  feedback status|on|off|buzzer <hz> <ms>|success_ms <ms>|idle <r> <g> <b>|success <r> <g> <b>|test"));
   console_->println(F("  button status|on|off|timing <wifi_ms> <reset_ms>"));
   console_->println(F("  portal on|off|status|ssid <ssid> [password]"));
@@ -5762,12 +5477,11 @@ void NetworkRfidReader::printHelp() {
   console_->println(F("  lf raw <count> | lf hid [ms] | lf indala [samples]"));
   console_->println(F("  hf probe | hf speed <hz> | hf init | hf off | hf status"));
   console_->println(F("  hf mode scan|card | hf tech a|b|f|v on|off"));
-  console_->println(F("  hf card on [uid]|off|uid <hex>|uid=<hex>|type nfc-a-t4t|nfc-a-t2t|ndef url|text|vcard|wifi <payload>|status"));
+  console_->println(F("  hf card status|uid <hex>|type nfc-a-t4t|nfc-a-t2t|ndef url|text|vcard|wifi <payload>"));
   console_->println(F("  format json|line"));
   console_->println(F("  window <lf_ms> <hf_ms>"));
   console_->println(F("  dedupe <ms>"));
   console_->println(F("  auto lf|hf on|off"));
-  console_->println(F("  pins"));
   console_->println(F("  save | load | clear | reboot | test"));
 }
 
@@ -5811,7 +5525,7 @@ void NetworkRfidReader::printStatus() {
   }
   console_->print(F(" tcp="));
   console_->print(tcpModeName(config_.tcpMode));
-  console_->print(F(" tcpEcho="));
+  console_->print(F(" tcpEvents="));
   console_->print(config_.tcpEchoEvents ? F("on") : F("off"));
   console_->print(F(" tcpCommands="));
   console_->print(config_.tcpCommands ? F("on") : F("off"));

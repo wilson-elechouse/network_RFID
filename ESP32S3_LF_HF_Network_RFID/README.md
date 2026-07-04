@@ -11,7 +11,7 @@ The firmware starts a lightweight hotspot configuration portal by default.
 - Default AP password: `rfid123456`
 - Open `http://10.10.10.10/` after joining the AP.
 
-The page can configure WiFi station credentials, TCP client/server mode, ELECHOUSE online TCP test session code, product interface mode, output format, LF/HF windows, duplicate suppression, HF speed, HF technologies, serial echo, feedback, button timing, and portal settings.
+The page can configure WiFi station credentials, TCP client/server mode, ELECHOUSE online TCP test session code, product interface mode, output format, LF/HF windows, duplicate suppression, HF speed, HF technologies, USB CDC events, feedback, button timing, and portal settings.
 
 Serial portal commands:
 
@@ -101,19 +101,21 @@ arduino-cli compile --upload -p COM3 `
 help
 status
 pins
-wifi <ssid> <password>
-wifi off
+wifi set <ssid> <password>
+wifi clear
 tcp client <host> <port>
 tcp server <port>
-tcp elechouse <session_code>
+elechouse on <session_code>
 tcp off
 tcp status
-elechouse on <session_code>
 elechouse status
-elechouse code clear
+elechouse off
+elechouse reconnect
+elechouse clear
 interface mode uart|wiegand|aba
-wiegand bits 26|34|37|56
-aba digits <0..32>
+interface wiegand bits 26|34|37|56
+interface aba digits <0..32>
+interface aba source raw|cn
 hf init
 hf off
 hf status
@@ -131,7 +133,7 @@ test
 常用配置示例：
 
 ```text
-wifi MyWifi MyPassword
+wifi set MyWifi MyPassword
 tcp client 192.168.1.20 9000
 format json
 window 350 350
@@ -142,7 +144,7 @@ reboot
 TCP server 模式：
 
 ```text
-wifi MyWifi MyPassword
+wifi set MyWifi MyPassword
 tcp server 9000
 save
 reboot

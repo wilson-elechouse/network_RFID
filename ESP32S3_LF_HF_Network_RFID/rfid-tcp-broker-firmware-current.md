@@ -235,7 +235,7 @@ Command inputs:
 ### 9.1 Configure WiFi
 
 ```text
-wifi <ssid> <password>
+wifi set <ssid> <password>
 save
 reboot
 ```
@@ -243,7 +243,7 @@ reboot
 Example:
 
 ```text
-wifi YOU B20150127
+wifi set YOU B20150127
 save
 reboot
 ```
@@ -274,12 +274,6 @@ Example:
 elechouse on EKQWQ4XZ
 ```
 
-Equivalent command:
-
-```text
-tcp elechouse <session_code>
-```
-
 Successful handshake example:
 
 ```text
@@ -298,7 +292,7 @@ Successful status example:
 
 ```text
 elechouse host=www.elechouse.com port=9000 session=EKQWQ4XZ mode=elechouse connected=yes brokerOk=yes
-tcp mode=elechouse host=www.elechouse.com port=9000 listen=9000 echo=on commands=on session=EKQWQ4XZ connected=yes brokerOk=yes
+tcp mode=elechouse host=www.elechouse.com port=9000 listen=9000 events=on commands=on session=EKQWQ4XZ connected=yes brokerOk=yes
 ```
 
 ### 9.3 Save for Automatic Connection After Reboot
@@ -310,18 +304,10 @@ save
 reboot
 ```
 
-### 9.4 Update or Clear session_code
-
-Update only the code without immediately switching TCP mode:
+### 9.4 Clear session_code
 
 ```text
-elechouse code <session_code>
-```
-
-Clear the saved code:
-
-```text
-elechouse code clear
+elechouse clear
 save
 ```
 
@@ -347,27 +333,26 @@ elechouse reconnect
 tcp status
 tcp client <host> <port>
 tcp server <port>
-tcp elechouse <session_code>
+elechouse on <session_code>
 tcp off
-tcp echo on|off
+tcp events on|off
 tcp commands on|off
 
 elechouse status
-elechouse code <session_code>
-elechouse code clear
-elechouse on [session_code]
+elechouse on <session_code>
 elechouse off
 elechouse reconnect
+elechouse clear
 ```
 
 ### 10.2 WiFi / Configuration Portal
 
 ```text
-wifi <ssid> <password>
+wifi set <ssid> <password>
 wifi status
 wifi scan [ssid]
 wifi reconnect
-wifi off
+wifi clear
 
 portal status
 portal on
@@ -440,7 +425,7 @@ reboot
 8. To remove the web session after production testing:
 
 ```text
-elechouse code clear
+elechouse clear
 save
 ```
 
@@ -467,7 +452,7 @@ Verify:
 After correcting WiFi settings:
 
 ```text
-wifi <ssid> <password>
+wifi set <ssid> <password>
 save
 reboot
 ```
@@ -522,7 +507,7 @@ Required state:
 mode=elechouse
 connected=yes
 brokerOk=yes
-echo=on
+events=on
 ```
 
 The firmware also has duplicate-card suppression. The same card may not upload repeatedly within the `dedupe` time window. Adjust it if needed:
