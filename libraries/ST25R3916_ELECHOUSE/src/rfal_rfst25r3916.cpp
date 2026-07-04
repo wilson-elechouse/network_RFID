@@ -2709,6 +2709,8 @@ ReturnCode RfalRfST25R3916Class::rfalListenSetState(rfalLmState newSt)
                                ST25R3916_IRQ_MASK_CRC |
                                ST25R3916_IRQ_MASK_ERR2 |
                                ST25R3916_IRQ_MASK_ERR1));
+        st25r3916ExecuteCommand(ST25R3916_CMD_CLEAR_FIFO);
+        st25r3916ExecuteCommand(ST25R3916_CMD_UNMASK_RECEIVE_DATA);
         st25r3916EnableInterrupts(ST25R3916_IRQ_MASK_RXE);
         break;
 
