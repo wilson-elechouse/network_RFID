@@ -14,6 +14,8 @@ Firmware and local library dependencies for the ESP32-S3 LF/HF network RFID read
 - Chinese operation and feature guide: [`OPERATION_GUIDE_CN.md`](OPERATION_GUIDE_CN.md)
 - Chinese command configuration manual: [`COMMAND_CONFIGURATION_MANUAL_CN.md`](COMMAND_CONFIGURATION_MANUAL_CN.md)
 - PDF command configuration manual: [`output/pdf/ELECHOUSE_Network_RFID_Command_Configuration_Manual_CN.pdf`](output/pdf/ELECHOUSE_Network_RFID_Command_Configuration_Manual_CN.pdf)
+- English command configuration manual: [`COMMAND_CONFIGURATION_MANUAL_EN.md`](COMMAND_CONFIGURATION_MANUAL_EN.md)
+- English PDF command configuration manual: [`output/pdf/ELECHOUSE_Network_RFID_Command_Configuration_Manual_EN.pdf`](output/pdf/ELECHOUSE_Network_RFID_Command_Configuration_Manual_EN.pdf)
 
 ## Current Board Target
 
