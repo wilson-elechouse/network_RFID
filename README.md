@@ -2,6 +2,10 @@
 
 Firmware and local library dependencies for the ESP32-S3 LF/HF network RFID reader mainboard.
 
+## Product Page
+
+- [Network RFID Reader V0.1H](https://www.elechouse.com/product/network-rfid-reader-v01h/)
+
 ## Repository Layout
 
 - `ESP32S3_LF_HF_Network_RFID/` - Product firmware Arduino library and example sketch.
