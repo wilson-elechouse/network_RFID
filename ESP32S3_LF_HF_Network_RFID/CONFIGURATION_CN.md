@@ -1,6 +1,6 @@
 # ESP32S3 LF/HF Network RFID 配置说明
 
-本文档适用于当前主板固件：ESP32-S3 SuperMini + LF 125 kHz + ST25R3916B I2C + WS2816C + 蜂鸣器 + 板载按键。
+本文档适用于当前主板固件：ESP32-S3 + LF 125 kHz + ST25R3916B I2C + WS2816C + 蜂鸣器 + 板载按键。
 
 ## 1. 配置原则
 

@@ -1,7 +1,7 @@
 #pragma once
 
 // Board profile for the current Network RFID Reader mainboard with
-// ESP32-S3 SuperMini and ST25R3916B on I2C.
+// ESP32-S3 and ST25R3916B on I2C.
 
 static constexpr const char* NETWORK_RFID_WIFI_HOSTNAME = "ELECHOUSE_RFID";
 

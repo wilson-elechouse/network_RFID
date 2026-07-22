@@ -1,0 +1,64 @@
+name: Publish product firmware
+
+on:
+  push:
+    tags:
+      - "*-v[0-9]*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Download and verify firmware
+        id: firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "$tag" =~ ^(.+)-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "Unsupported release tag: $tag" >&2
+            exit 1
+          fi
+
+          product="${BASH_REMATCH[1]}"
+          version="${BASH_REMATCH[2]}"
+          manifest="releases/${product}/${version}/release.json"
+
+          test -f "$manifest"
+          test "$(jq -r '.product' "$manifest")" = "$product"
+          test "$(jq -r '.version' "$manifest")" = "$version"
+
+          mkdir -p dist
+          app_name="$(jq -r '.images.app.name' "$manifest")"
+          app_url="$(jq -r '.images.app.url' "$manifest")"
+          app_sha="$(jq -r '.images.app.sha256' "$manifest")"
+          merged_name="$(jq -r '.images.merged.name' "$manifest")"
+          merged_url="$(jq -r '.images.merged.url' "$manifest")"
+          merged_sha="$(jq -r '.images.merged.sha256' "$manifest")"
+
+          curl --fail --location --retry 3 --output "dist/${app_name}" "$app_url"
+          curl --fail --location --retry 3 --output "dist/${merged_name}" "$merged_url"
+          echo "${app_sha}  dist/${app_name}" | sha256sum --check --strict
+          echo "${merged_sha}  dist/${merged_name}" | sha256sum --check --strict
+
+          echo "display_name=$(jq -r '.display_name' "$manifest")" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "app_file=dist/${app_name}" >> "$GITHUB_OUTPUT"
+          echo "merged_file=dist/${merged_name}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.firmware.outputs.display_name }} v${{ steps.firmware.outputs.version }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            ${{ steps.firmware.outputs.app_file }}
+            ${{ steps.firmware.outputs.merged_file }}

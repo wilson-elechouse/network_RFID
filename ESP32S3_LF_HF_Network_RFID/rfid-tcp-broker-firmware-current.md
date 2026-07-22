@@ -2,7 +2,7 @@
 
 Applicable firmware: `ESP32S3_LF_HF_Network_RFID`
 
-Applicable hardware: ELECHOUSE Network RFID Reader Mainboard, current controller board ESP32-S3 SuperMini, ST25R3916B HF frontend, HF bus fixed to I2C.
+Applicable hardware: ELECHOUSE Network RFID Reader Mainboard, ESP32-S3 controller, ST25R3916B HF frontend, HF bus fixed to I2C.
 
 Web test page:
 

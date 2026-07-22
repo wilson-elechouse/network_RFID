@@ -24,7 +24,7 @@ portal ssid <ssid> [password]
 
 If TCP server mode uses the same port as the portal, the TCP server will not start. Keep the portal on port `80` and use a different TCP server port such as `9000`.
 
-这个 Arduino 库面向当前 Network RFID Reader 主板：NoLogo ESP32S3 SuperMini + LF 125 kHz + ST25R3916B HF I2C + WS2816C + 蜂鸣器 + 板载按键。
+这个 Arduino 库面向当前 Network RFID Reader 主板：ESP32-S3 + LF 125 kHz + ST25R3916B HF I2C + WS2816C + 蜂鸣器 + 板载按键。
 
 ## 功能
 

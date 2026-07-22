@@ -17,7 +17,7 @@ void setup() {
 
   NetworkRfidConfig config;
 
-  // Defaults match the current ESP32-S3 SuperMini LF/HF wiring:
+  // Defaults match the current ESP32-S3 LF/HF wiring:
   // LF: OUT=GPIO1, DATA=GPIO2, CARRIER=GPIO3, PULL=GPIO4, ADC=GPIO13
   // HF I2C: SCL=GPIO5, SDA=GPIO7, IRQ=GPIO9, +5V, GND
   // Feedback: WS2816C DIN=GPIO11, buzzer drive=GPIO12

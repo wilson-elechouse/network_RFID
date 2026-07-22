@@ -1,0 +1,22 @@
+{
+  "product": "network-rfid-reader-v01h",
+  "display_name": "ELECHOUSE Network RFID Reader V0.1H",
+  "version": "0.1.2",
+  "target": "esp32-s3",
+  "release_type": "stable",
+  "changelog": "Add firmware version reporting, use ESP32-S3 as the canonical target, and support browser firmware updates.",
+  "images": {
+    "app": {
+      "name": "ESP32S3_SPI_LF_HF_TCP.ino.bin",
+      "url": "https://www.elechouse.com/wp-content/uploads/elechouse-rfid-firmware/network-rfid-reader-v01h/esp32-s3/0.1.2/ESP32S3_SPI_LF_HF_TCP.ino.bin",
+      "size": 1123952,
+      "sha256": "4615603961fc593ce54f76ed491a5a407df1124100dd2b8eec522dda1e0a8da9"
+    },
+    "merged": {
+      "name": "ESP32S3_SPI_LF_HF_TCP.ino.merged.bin",
+      "url": "https://www.elechouse.com/wp-content/uploads/elechouse-rfid-firmware/network-rfid-reader-v01h/esp32-s3/0.1.2/ESP32S3_SPI_LF_HF_TCP.ino.merged.bin",
+      "size": 4194304,
+      "sha256": "ace5edad62134a10408f1075e1acbe377dbe0cf843f95ec25978e4da3b368587"
+    }
+  }
+}

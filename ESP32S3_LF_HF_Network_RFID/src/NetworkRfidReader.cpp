@@ -28,6 +28,26 @@
 #define NETWORK_RFID_HAS_RMT 0
 #endif
 
+#ifndef NETWORK_RFID_FIRMWARE_PRODUCT
+#define NETWORK_RFID_FIRMWARE_PRODUCT "network-rfid-reader-v01h"
+#endif
+
+#ifndef NETWORK_RFID_FIRMWARE_NAME
+#define NETWORK_RFID_FIRMWARE_NAME "ESP32S3_LF_HF_Network_RFID"
+#endif
+
+#ifndef NETWORK_RFID_FIRMWARE_VERSION
+#define NETWORK_RFID_FIRMWARE_VERSION "0.1.2"
+#endif
+
+#ifndef NETWORK_RFID_FIRMWARE_GIT
+#define NETWORK_RFID_FIRMWARE_GIT "unknown"
+#endif
+
+#ifndef NETWORK_RFID_FIRMWARE_TARGET
+#define NETWORK_RFID_FIRMWARE_TARGET "esp32-s3"
+#endif
+
 namespace {
 constexpr uint32_t kStationConnectTimeoutMs = 15000UL;
 constexpr uint32_t kPortalAutoRebootMs = 10UL * 60UL * 1000UL;
@@ -2497,6 +2517,15 @@ void NetworkRfidReader::handleCommand(String line) {
 
   if (cmd == "help") {
     printHelp();
+  } else if (cmd == "version") {
+    const String format = lowerCopy(nextToken(rest));
+    if (format.length() == 0) {
+      printVersion(false);
+    } else if (format == "json") {
+      printVersion(true);
+    } else {
+      console_->println(F("ERR version [json]"));
+    }
   } else if (cmd == "status") {
     printStatus();
   } else if (cmd == "pins") {
@@ -5521,7 +5550,7 @@ void NetworkRfidReader::printHelp() {
   console_->println();
   console_->println(F("ESP32S3 LF/HF Network RFID"));
   console_->println(F("Commands:"));
-  console_->println(F("  help | status | pins"));
+  console_->println(F("  help | version [json] | status | pins"));
   console_->println(F("  wifi status | wifi scan [ssid] | wifi set <ssid> <password> | wifi reconnect | wifi clear"));
   console_->println(F("  tcp status | tcp client <host> <port> | tcp server <port> | tcp off | tcp events on|off | tcp commands on|off"));
   console_->println(F("  elechouse status | elechouse on <session_code> | elechouse off | elechouse reconnect | elechouse clear"));
@@ -5540,6 +5569,55 @@ void NetworkRfidReader::printHelp() {
   console_->println(F("  dedupe <ms>"));
   console_->println(F("  auto lf|hf on|off"));
   console_->println(F("  save | load | clear | reboot | test"));
+}
+
+void NetworkRfidReader::printVersion(bool json) {
+  if (console_ == nullptr) {
+    return;
+  }
+
+  const char* chip = ESP.getChipModel();
+  if (chip == nullptr || chip[0] == '\0') {
+    chip = "unknown";
+  }
+
+  if (json) {
+    console_->print(F("{\"product\":\""));
+    console_->print(F(NETWORK_RFID_FIRMWARE_PRODUCT));
+    console_->print(F("\",\"firmware\":\""));
+    console_->print(F(NETWORK_RFID_FIRMWARE_NAME));
+    console_->print(F("\",\"version\":\""));
+    console_->print(F(NETWORK_RFID_FIRMWARE_VERSION));
+    console_->print(F("\",\"target\":\""));
+    console_->print(F(NETWORK_RFID_FIRMWARE_TARGET));
+    console_->print(F("\",\"chip\":\""));
+    console_->print(chip);
+    console_->print(F("\",\"build_date\":\""));
+    console_->print(F(__DATE__));
+    console_->print(F("\",\"build_time\":\""));
+    console_->print(F(__TIME__));
+    console_->print(F("\",\"git\":\""));
+    console_->print(F(NETWORK_RFID_FIRMWARE_GIT));
+    console_->println(F("\"}"));
+    return;
+  }
+
+  console_->print(F("firmware product="));
+  console_->print(F(NETWORK_RFID_FIRMWARE_PRODUCT));
+  console_->print(F(" name="));
+  console_->print(F(NETWORK_RFID_FIRMWARE_NAME));
+  console_->print(F(" version="));
+  console_->print(F(NETWORK_RFID_FIRMWARE_VERSION));
+  console_->print(F(" target="));
+  console_->print(F(NETWORK_RFID_FIRMWARE_TARGET));
+  console_->print(F(" chip="));
+  console_->print(chip);
+  console_->print(F(" build=\""));
+  console_->print(F(__DATE__));
+  console_->print(F(" "));
+  console_->print(F(__TIME__));
+  console_->print(F("\" git="));
+  console_->println(F(NETWORK_RFID_FIRMWARE_GIT));
 }
 
 void NetworkRfidReader::printStatus() {

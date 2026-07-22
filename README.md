@@ -12,9 +12,9 @@ Firmware and local library dependencies for the ESP32-S3 LF/HF network RFID read
 - `libraries/NFC-RFAL/` - RFAL/NDEF support library used by the ST25R3916 driver.
 - `libraries/ST25R3916_ELECHOUSE/` - ELECHOUSE ST25R3916/ST25R3916B driver with I2C/SPI support and current listen-mode work.
 
-## Current Board Target
+## Current Target
 
-- MCU board: ESP32-S3 SuperMini
+- MCU: ESP32-S3
 - HF frontend: ST25R3916B over I2C
 - Default HF pins: SCL GPIO5, SDA GPIO7, IRQ GPIO9
 - Feedback: WS2816C data GPIO11, buzzer GPIO12
@@ -47,3 +47,21 @@ arduino-cli upload -p COM3 `
 The firmware includes LF/HF scan, Wi-Fi configuration portal, TCP command support, ELECHOUSE broker test mode, UART/Wiegand/ABA product output, feedback LED/buzzer, and initial NFC-A Type 4 Tag card emulation work.
 
 P2P is intentionally disabled in the current firmware.
+
+## Product Releases
+
+The repository keeps shared libraries and product firmware together on `main`. Product variants use separate source directories instead of long-lived product branches.
+
+Stable releases use tags in this format:
+
+```text
+<product>-v<version>
+```
+
+For example:
+
+```text
+network-rfid-reader-v01h-v0.1.2
+```
+
+Each tag has a matching release manifest under `releases/<product>/<version>/release.json`. GitHub Actions downloads the verified binaries from the ELECHOUSE firmware server, validates their SHA256 values, and attaches them to the GitHub Release.

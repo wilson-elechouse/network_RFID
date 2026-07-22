@@ -198,6 +198,7 @@ public:
   void setCardCallback(NetworkRfidCardCallback callback, void* context = nullptr);
 
   void printHelp();
+  void printVersion(bool json = false);
   void printStatus();
   void printPins();
 
