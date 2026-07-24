@@ -13,7 +13,10 @@ Thumbs.db
 # Local-only hardware/exported documentation artifacts.
 hardware/
 output/
-website/
+website/*
+!website/server/
+website/server/*
+!website/server/serial-config.html
 COMMAND_CONFIGURATION_MANUAL_CN.md
 COMMAND_CONFIGURATION_MANUAL_EN.md
 ELECHOUSE_TCP_BROKER_TEST_GUIDE_CN.md
