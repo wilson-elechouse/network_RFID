@@ -37,7 +37,7 @@
 #endif
 
 #ifndef NETWORK_RFID_FIRMWARE_VERSION
-#define NETWORK_RFID_FIRMWARE_VERSION "0.1.2"
+#define NETWORK_RFID_FIRMWARE_VERSION "0.1.3"
 #endif
 
 #ifndef NETWORK_RFID_FIRMWARE_GIT
@@ -46,6 +46,14 @@
 
 #ifndef NETWORK_RFID_FIRMWARE_TARGET
 #define NETWORK_RFID_FIRMWARE_TARGET "esp32-s3"
+#endif
+
+#ifndef NETWORK_RFID_PARTITION_SCHEMA
+#define NETWORK_RFID_PARTITION_SCHEMA 1
+#endif
+
+#ifndef NETWORK_RFID_CONFIG_SCHEMA
+#define NETWORK_RFID_CONFIG_SCHEMA 1
 #endif
 
 namespace {
@@ -5590,7 +5598,11 @@ void NetworkRfidReader::printVersion(bool json) {
     console_->print(F(NETWORK_RFID_FIRMWARE_VERSION));
     console_->print(F("\",\"target\":\""));
     console_->print(F(NETWORK_RFID_FIRMWARE_TARGET));
-    console_->print(F("\",\"chip\":\""));
+    console_->print(F("\",\"partition_schema\":"));
+    console_->print(NETWORK_RFID_PARTITION_SCHEMA);
+    console_->print(F(",\"config_schema\":"));
+    console_->print(NETWORK_RFID_CONFIG_SCHEMA);
+    console_->print(F(",\"chip\":\""));
     console_->print(chip);
     console_->print(F("\",\"build_date\":\""));
     console_->print(F(__DATE__));
@@ -5610,6 +5622,10 @@ void NetworkRfidReader::printVersion(bool json) {
   console_->print(F(NETWORK_RFID_FIRMWARE_VERSION));
   console_->print(F(" target="));
   console_->print(F(NETWORK_RFID_FIRMWARE_TARGET));
+  console_->print(F(" partition_schema="));
+  console_->print(NETWORK_RFID_PARTITION_SCHEMA);
+  console_->print(F(" config_schema="));
+  console_->print(NETWORK_RFID_CONFIG_SCHEMA);
   console_->print(F(" chip="));
   console_->print(chip);
   console_->print(F(" build=\""));

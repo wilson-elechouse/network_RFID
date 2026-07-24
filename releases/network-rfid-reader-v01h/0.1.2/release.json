@@ -3,6 +3,8 @@
   "display_name": "ELECHOUSE Network RFID Reader V0.1H",
   "version": "0.1.2",
   "target": "esp32-s3",
+  "partition_schema": 1,
+  "config_schema": 1,
   "release_type": "stable",
   "changelog": "Add firmware version reporting, use ESP32-S3 as the canonical target, and support browser firmware updates.",
   "images": {

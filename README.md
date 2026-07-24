@@ -61,7 +61,7 @@ Stable releases use tags in this format:
 For example:
 
 ```text
-network-rfid-reader-v01h-v0.1.2
+network-rfid-reader-v01h-v0.1.3
 ```
 
 Each tag has a matching release manifest under `releases/<product>/<version>/release.json`. GitHub Actions downloads the verified binaries from the ELECHOUSE firmware server, validates their SHA256 values, and attaches them to the GitHub Release.
